@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fuente base y colores */
+body {
+  background-color: #000;
+  color: #fff;
+  font-family: 'Poppins', sans-serif;
+}
+
+/* Botones personalizados */
+button {
+  border-radius: 9999px;
+  padding: 0.5rem 1.25rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+/* Botón Primario */
+.btn-primary {
+  background-color: #facc15;
+  color: black;
+}
+.btn-primary:hover {
+  background-color: #eab308;
+}
+
+/* Botón Contorno (Outline) */
+.btn-outline {
+  border: 1px solid #facc15;
+  color: #facc15;
+}
+.btn-outline:hover {
+  background-color: #facc15;
+  color: black;
+}
+
+/* Input del prompt */
+.input-prompt {
+  width: 100%;
+  padding: 0.75rem 1.5rem;
+  background-color: #27272a;
+  border: 1px solid #3f3f46;
+  color: white;
+  border-radius: 9999px;
+  outline: none;
+  font-size: 0.95rem;
+}
+
+/* Animación pulsante lenta */
+.animate-pulse-slow {
+  animation: pulse 4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.03);
+  }
+}
+
+/* Animación de entrada fade-in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 1.8s ease-out forwards;
+}
+
+/* Glow para textos principales */
+.text-glow {
+  text-shadow: 0 0 10px #facc15, 0 0 20px #facc15;
+}

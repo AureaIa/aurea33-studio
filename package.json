@@ -1,0 +1,23 @@
+{
+  "name": "aurea-design-studio",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@stripe/stripe-js": "^7.3.0",
+    "autoprefixer": "^10.0.0",
+    "exceljs": "^4.4.0",
+    "firebase": "^9.23.0",
+    "firebase-admin": "^13.6.0",
+    "next": "latest",
+    "openai": "^6.15.0",
+    "postcss": "^8.0.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "stripe": "^18.1.0",
+    "tailwindcss": "^3.0.0"
+  }
+}
