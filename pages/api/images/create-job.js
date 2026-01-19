@@ -1,29 +1,78 @@
-import { adminDb } from "../../../lib/firebaseAdmin";
+// pages/api/images/create-job.js
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
+    const url =
+      process.env.CREATE_IMAGE_URL ||
+      process.env.NEXT_PUBLIC_CREATE_IMAGE_URL ||
+      "";
+
+    if (!url) {
+      return res.status(500).json({ error: "Missing CREATE_IMAGE_URL in env" });
     }
 
-    const { prompt, size = "1024x1024" } = req.body || {};
+    const body = req.body || {};
 
-    if (!prompt || !prompt.trim()) {
-      return res.status(400).json({ error: "Prompt requerido" });
+    // ✅ Captura prompt aunque venga con otras keys
+    const promptRaw = body.prompt ?? body.text ?? body.message ?? "";
+    const prompt = typeof promptRaw === "string" ? promptRaw.trim() : promptRaw;
+
+    const n = body.n ?? 1;
+    const size = body.size ?? "1024x1024";
+    const model = body.model ?? "gpt-image-1";
+
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : null;
+
+    if (!token) {
+      return res.status(401).json({
+        error: "Missing Authorization Bearer token",
+        debug: {
+          contentType: req.headers["content-type"],
+          receivedBody: body,
+        },
+      });
     }
 
-    const ref = await adminDb.collection("imageJobs").add({
-      prompt,
-      size,
-      status: "queued",
-      userId: "dev",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    // ✅ Reenvío a Cloud Function
+    const upstream = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ prompt, n, size, model }),
     });
 
-    return res.status(200).json({ jobId: ref.id });
+    const upstreamText = await upstream.text().catch(() => "");
+    let upstreamJson = null;
+    try {
+      upstreamJson = upstreamText ? JSON.parse(upstreamText) : null;
+    } catch {
+      upstreamJson = null;
+    }
+
+    return res.status(upstream.status).json({
+      ...(upstreamJson || {}),
+      debug: {
+        urlUsed: url,
+        upstreamStatus: upstream.status,
+        upstreamText,
+        contentType: req.headers["content-type"],
+        receivedBody: body,
+        forwardedBody: { prompt, n, size, model },
+        promptType: typeof prompt,
+      },
+    });
   } catch (err) {
-    console.error("CREATE JOB ERROR:", err);
-    return res.status(500).json({ error: err.message });
+    console.error("create-job proxy error:", err);
+    return res.status(500).json({ error: err?.message || "Unknown error" });
   }
 }

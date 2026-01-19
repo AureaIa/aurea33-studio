@@ -1,6 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@keyframes aureaPulse {
+  0% { opacity: .25; transform: scaleX(.9); }
+  50% { opacity: 1; transform: scaleX(1.05); }
+  100% { opacity: .25; transform: scaleX(.9); }
+}
 
 /* Fuente base y colores */
 body {

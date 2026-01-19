@@ -1,0 +1,150 @@
+{
+  "fileName": "prueba.xlsx",
+  "spec": {
+    "version": "1.1",
+    "workbook": {
+      "theme": "dark-gold",
+      "title": "prueba"
+    },
+    "sheets": [
+      {
+        "name": "Data",
+        "kind": "data",
+        "style": {
+          "header": {
+            "bold": true,
+            "freeze": true
+          },
+          "zebra": true
+        },
+        "data": {
+          "columns": [
+            {
+              "header": "Fecha",
+              "key": "fecha",
+              "type": "date",
+              "width": 14
+            },
+            {
+              "header": "Concepto",
+              "key": "concepto",
+              "type": "text",
+              "width": 36
+            },
+            {
+              "header": "Categoría",
+              "key": "categoria",
+              "type": "text",
+              "width": 20
+            },
+            {
+              "header": "Forma de pago",
+              "key": "pago",
+              "type": "text",
+              "width": 16
+            },
+            {
+              "header": "Ingreso",
+              "key": "ingreso",
+              "type": "currency",
+              "width": 14
+            },
+            {
+              "header": "Egreso",
+              "key": "egreso",
+              "type": "currency",
+              "width": 14
+            }
+          ],
+          "exampleRows": [
+            {
+              "fecha": "2026-01-15",
+              "concepto": "Ejemplo",
+              "categoria": "General",
+              "pago": "Transferencia",
+              "ingreso": 5474,
+              "egreso": 5559
+            }
+          ],
+          "totals": {
+            "mode": "row_col",
+            "currencyCols": [
+              "ingreso",
+              "egreso"
+            ]
+          }
+        }
+      },
+      {
+        "name": "Dashboard",
+        "kind": "dashboard",
+        "layout": {
+          "option": "A",
+          "kpiCard": {
+            "merge": false,
+            "labelTop": true
+          },
+          "spacing": "comfortable"
+        },
+        "charts": [
+          {
+            "type": "bar",
+            "title": "Resumen",
+            "from": "Data"
+          }
+        ],
+        "kpis": [
+          {
+            "label": "Ingresos",
+            "formula": "=SUM(Data!E:E)",
+            "format": "currency"
+          },
+          {
+            "label": "Egresos",
+            "formula": "=SUM(Data!F:F)",
+            "format": "currency"
+          },
+          {
+            "label": "Balance",
+            "formula": "=KPI(\"Ingresos\")-KPI(\"Egresos\")",
+            "format": "currency"
+          }
+        ]
+      }
+    ],
+    "kpis": [
+      {
+        "label": "Ingresos",
+        "formula": "=SUM(Data!E:E)",
+        "format": "currency"
+      },
+      {
+        "label": "Egresos",
+        "formula": "=SUM(Data!F:F)",
+        "format": "currency"
+      },
+      {
+        "label": "Balance",
+        "formula": "=KPI(\"Ingresos\")-KPI(\"Egresos\")",
+        "format": "currency"
+      }
+    ],
+    "notes": {
+      "purpose": "Contable / Finanzas",
+      "level": "Profesional",
+      "periodicity": "Diario",
+      "industry": "Clínica / salud / consultorio",
+      "theme": "Dark/Gold (Aurea33)",
+      "wantCharts": true,
+      "wantImages": false,
+      "context": {
+        "columns_need": "Fecha, concepto, ingreso, egreso, categoría, forma de pago",
+        "totals_auto": "Sí, por fila y por columna",
+        "controlType": "Ingresos/Egresos",
+        "dashboard": "Sí (recomendado)"
+      },
+      "uiOption": "A",
+      "totalsMode": "row_col"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "version": "AUREA_EXCEL_SPEC_v1",
+  "meta": {
+    "currency": "MXN",
+    "controlType": "ingresos_egresos",
+    "dashboard": true,
+    "kpiHint": "",
+    "createdAt": "2026-01-15T07:04:10.806609"
+  },
+  "lists": {
+    "categories": [
+      "Ventas",
+      "Compras",
+      "Servicios",
+      "Nómina",
+      "Impuestos",
+      "Renta",
+      "Marketing",
+      "Otros"
+    ],
+    "payments": [
+      "Efectivo",
+      "Transferencia",
+      "Depósito",
+      "Tarjeta",
+      "Otro"
+    ]
+  },
+  "data": {
+    "rows": []
+  },
+  "layout": {
+    "sheetMain": "AUREA",
+    "sheetDash": "Dashboard"
+  }
+}

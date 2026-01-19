@@ -1,0 +1,149 @@
+{
+  "version": "1.1",
+  "workbook": {
+    "theme": "dark-gold",
+    "title": "prueba_AUREA_excel"
+  },
+  "sheets": [
+    {
+      "name": "AUREA",
+      "kind": "data",
+      "style": {
+        "header": {
+          "bold": true,
+          "freeze": true
+        },
+        "zebra": true
+      },
+      "data": {
+        "columns": [
+          {
+            "header": "Fecha",
+            "key": "fecha",
+            "type": "date",
+            "width": 14
+          },
+          {
+            "header": "Concepto",
+            "key": "concepto",
+            "type": "text",
+            "width": 36
+          },
+          {
+            "header": "Categoría",
+            "key": "categoria",
+            "type": "text",
+            "width": 20
+          },
+          {
+            "header": "Forma de pago",
+            "key": "pago",
+            "type": "text",
+            "width": 16
+          },
+          {
+            "header": "Ingreso",
+            "key": "ingreso",
+            "type": "currency",
+            "width": 14
+          },
+          {
+            "header": "Egreso",
+            "key": "egreso",
+            "type": "currency",
+            "width": 14
+          }
+        ],
+        "exampleRows": [
+          {
+            "fecha": "2026-01-15",
+            "concepto": "Ejemplo",
+            "categoria": "General",
+            "pago": "Transferencia",
+            "ingreso": 1187,
+            "egreso": 5624
+          }
+        ],
+        "totals": {
+          "mode": "row_col",
+          "currencyCols": [
+            "ingreso",
+            "egreso"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Dashboard",
+      "kind": "dashboard",
+      "layout": {
+        "option": "A",
+        "kpiCard": {
+          "merge": false,
+          "labelTop": true
+        },
+        "spacing": "comfortable"
+      },
+      "charts": [
+        {
+          "type": "bar",
+          "title": "Resumen",
+          "from": "AUREA"
+        }
+      ],
+      "kpis": [
+        {
+          "label": "Ingresos",
+          "formula": "=SUM(AUREA!E:E)",
+          "format": "currency"
+        },
+        {
+          "label": "Egresos",
+          "formula": "=SUM(AUREA!F:F)",
+          "format": "currency"
+        },
+        {
+          "label": "Balance",
+          "formula": "=KPI(\"Ingresos\")-KPI(\"Egresos\")",
+          "format": "currency"
+        }
+      ]
+    }
+  ],
+  "kpis": [
+    {
+      "label": "Ingresos",
+      "formula": "=SUM(AUREA!E:E)",
+      "format": "currency"
+    },
+    {
+      "label": "Egresos",
+      "formula": "=SUM(AUREA!F:F)",
+      "format": "currency"
+    },
+    {
+      "label": "Balance",
+      "formula": "=KPI(\"Ingresos\")-KPI(\"Egresos\")",
+      "format": "currency"
+    }
+  ],
+  "notes": {
+    "purpose": "Contable / Finanzas",
+    "level": "Directivo",
+    "periodicity": "Diario",
+    "industry": "Agencia de marketing / publicidad",
+    "theme": "Dark/Gold (Aurea33)",
+    "wantCharts": true,
+    "wantImages": false,
+    "context": {
+      "columns_need": "me gustarian las filas que sean de tomografias simples, tomografias contrastadas, ultrasonidos basicos, ecografia doppler, rayos x, y que las columnas vengan con nombre del servicios (tomografia simple,contrastada, eco.... los que puse), luego de nombre de servicio, que se ponga el precio fijo por estudio, y que en la siguiente columna venga estudios realizados (ahi cambiamos el numero que se multiplica por el costo fijo del producto) es decir 2,980 x \"numero que cambiemos en esa columna\" y luego la otra columna diga total generado.... \n\ny luego otras dos de total generado, egresos totales. \n",
+      "totals_auto": "Sí, por fila y por columna",
+      "accounting_type": "Ingresos/Egresos",
+      "currency": "MXN",
+      "kpi_focus": "Total ventas, margen, top 5 productos, ticket promedio…\n",
+      "dashboard": "Sí (recomendado)"
+    },
+    "uiOption": "A",
+    "totalsMode": "row_col"
+  }
+}
