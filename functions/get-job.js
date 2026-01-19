@@ -7,7 +7,14 @@ try {
   admin.initializeApp();
 }
 
-const BUILD_ID = "get-job-v1-2026-01-09-0955";
+const BUILD_ID = "get-job-v1-2026-01-19-0001";
+
+function getBearerToken(req) {
+  const authHeader = String(req.headers.authorization || "");
+  if (!authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.slice("Bearer ".length).trim();
+  return token || null;
+}
 
 module.exports = async (req, res) => {
   // ✅ CORS preflight
@@ -19,11 +26,34 @@ module.exports = async (req, res) => {
     return res.status(204).send("");
   }
 
-  // ✅ CORS + no cache
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Cache-Control", "no-store");
 
+  if (req.method !== "GET") {
+    return res
+      .status(405)
+      .json({ ok: false, buildId: BUILD_ID, error: "Method not allowed" });
+  }
+
   try {
+    // ✅ Auth (OBLIGATORIO)
+    const token = getBearerToken(req);
+    if (!token) {
+      return res
+        .status(401)
+        .json({ ok: false, buildId: BUILD_ID, error: "Missing Bearer token" });
+    }
+
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(token);
+    } catch (e) {
+      return res
+        .status(401)
+        .json({ ok: false, buildId: BUILD_ID, error: "Invalid token" });
+    }
+
+    // ✅ jobId
     const jobId = String(req.query.jobId || "").trim();
     if (!jobId) {
       return res.status(400).json({
@@ -36,21 +66,29 @@ module.exports = async (req, res) => {
     const docRef = admin.firestore().collection("imageJobs").doc(jobId);
     const snap = await docRef.get();
 
-    // ✅ FIX: en vez de 404, devolvemos queued para evitar “404 intermitente”
+    // ✅ Anti-flicker pero seguro:
+    // Si no existe, NO damos 404 para no romper UI, pero tampoco filtramos info.
     if (!snap.exists) {
       return res.status(200).json({
         ok: true,
         buildId: BUILD_ID,
         jobId,
         status: "queued",
-        job: {
-          status: "queued",
-          note: "Job aún no existe en Firestore; esperando creación.",
-        },
+        job: { status: "queued" },
       });
     }
 
     const job = snap.data() || {};
+
+    // ✅ AUTHZ: si no es tuyo, NO lo puedes ver
+    if (job.userId && job.userId !== decoded.uid) {
+      // Importante: aquí sí devolvemos 403 (o puedes devolver queued si quieres “silencio”)
+      return res.status(403).json({
+        ok: false,
+        buildId: BUILD_ID,
+        error: "Forbidden",
+      });
+    }
 
     return res.status(200).json({
       ok: true,

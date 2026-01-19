@@ -1,70 +1,43 @@
 // pages/api/images/get-job.js
-
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.setHeader("Allow", ["GET"]);
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Method not allowed" });
+
+  const targetBase = process.env.GET_IMAGE_URL;
+  if (!targetBase) return res.status(500).json({ ok: false, error: "Missing GET_IMAGE_URL" });
 
   try {
-    const baseUrl =
-      process.env.GET_IMAGE_URL ||
-      process.env.NEXT_PUBLIC_GET_IMAGE_URL ||
-      "";
-
-    if (!baseUrl) {
-      return res.status(500).json({ error: "Missing GET_IMAGE_URL in env" });
+    const auth = req.headers.authorization || "";
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, error: "Missing Bearer token" });
     }
 
     const jobId = String(req.query.jobId || "").trim();
-    if (!jobId) return res.status(400).json({ error: "Missing jobId" });
+    if (!jobId) return res.status(400).json({ ok: false, error: "jobId requerido" });
 
-    const authHeader = req.headers.authorization || "";
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length).trim()
-      : null;
+    // 🔥 Pasamos jobId como querystring a tu Cloud Function
+    const url = `${targetBase}?jobId=${encodeURIComponent(jobId)}`;
 
-    if (!token) {
-      return res.status(401).json({ error: "Missing Authorization Bearer token" });
-    }
-
-    // ✅ Construcción robusta de URL (soporta baseUrl con o sin ?)
-    const joiner = baseUrl.includes("?") ? "&" : "?";
-    const finalUrl = `${baseUrl}${joiner}jobId=${encodeURIComponent(jobId)}`;
-
-    // ✅ Evita caches raros
-    res.setHeader("Cache-Control", "no-store");
-
-    const r = await fetch(finalUrl, {
+    const r = await fetch(url, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: auth,
       },
     });
 
-    // ✅ Intenta JSON, si no, lee texto
-    const text = await r.text().catch(() => "");
-    let data = {};
+    const text = await r.text();
+    res.status(r.status);
+
     try {
-      data = text ? JSON.parse(text) : {};
+      return res.json(JSON.parse(text));
     } catch {
-      data = { raw: text };
+      return res.send(text);
     }
-
-    // ✅ OPCIONAL: si tu Function manda 404 mientras el job aún no existe,
-    // lo convertimos a "queued" para que el frontend no truene
-    if (r.status === 404) {
-      return res.status(200).json({
-        status: "queued",
-        jobId,
-        note: "Job not found yet (404 from upstream) — treating as queued",
-        urlUsed: baseUrl,
-      });
-    }
-
-    return res.status(r.status).json({ ...data, urlUsed: baseUrl });
-  } catch (err) {
-    console.error("get-job proxy error:", err);
-    return res.status(500).json({ error: err?.message || "Unknown error" });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || "Proxy error" });
   }
 }
