@@ -15,7 +15,7 @@ const TABS = [
   { key: "chat", title: "Chat AUREA" },
   { key: "images", title: "Imágenes" },
   { key: "code", title: "Código" },
-  { key: "studio", title: "AUREA STUDIO" },
+  { key: "studio", title: "AUREA STUDIO 🚀" },
   { key: "excel", title: "Excel" },
 ];
 
