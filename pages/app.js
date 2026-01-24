@@ -5,8 +5,6 @@ import { useRouter } from "next/router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import StudioCanvas from "../components/studio/StudioCanvas";
-
-
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
 import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
