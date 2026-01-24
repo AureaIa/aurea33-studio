@@ -4,6 +4,8 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
+import StudioCanvas from "../components/studio/StudioCanvas";
+
 
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
@@ -13,6 +15,7 @@ const TABS = [
   { key: "chat", title: "Chat AUREA" },
   { key: "images", title: "Imágenes" },
   { key: "code", title: "Código" },
+  { key: "studio", title: "AUREA STUDIO" },
   { key: "excel", title: "Excel" },
 ];
 
@@ -62,10 +65,28 @@ function makeProject(title = "Nuevo proyecto") {
       chat: { messages: [] },
       images: { messages: [] },
       code: { messages: [] },
-      excel: { meta: { lastSpec: null, lastFileName: null, lastOkAt: null, lastError: null } },
+
+      // ✅ Studio base (persistente)
+      studio: {
+        meta: {
+          activeDocId: null,
+          lastTemplate: null,
+        },
+        docs: [],
+      },
+
+      excel: {
+        meta: {
+          lastSpec: null,
+          lastFileName: null,
+          lastOkAt: null,
+          lastError: null,
+        },
+      },
     },
   };
 }
+
 
 /* ----------------------------- Utilities ----------------------------- */
 
@@ -253,15 +274,36 @@ export default function AppPage() {
 
     const data = loadProjectsLS(user.uid);
 
-    if (data?.projects?.length) {
-      setProjects(data.projects);
-      setActiveProjectId(data.activeProjectId || data.projects[0]?.id || null);
-    } else {
-      const seed = [makeProject("gato astronauta"), makeProject("Genera una persona animada…")];
-      setProjects(seed);
-      setActiveProjectId(seed[0].id);
-      saveProjectsLS(user.uid, { projects: seed, activeProjectId: seed[0].id });
+if (data?.projects?.length) {
+  const patched = data.projects.map((p) => {
+    const tabs = { ...(p.tabs || {}) };
+
+    // 🔒 INYECTAR STUDIO SI NO EXISTE (proyectos viejos)
+    if (!tabs.studio) {
+      tabs.studio = {
+        meta: {
+          activeDocId: null,
+          lastTemplate: null,
+        },
+        docs: [],
+      };
     }
+
+    return { ...p, tabs };
+  });
+
+  setProjects(patched);
+  setActiveProjectId(data.activeProjectId || patched[0]?.id || null);
+} else {
+  const seed = [
+    makeProject("gato astronauta"),
+    makeProject("Genera una persona animada..."),
+  ];
+  setProjects(seed);
+  setActiveProjectId(seed[0]?.id);
+  saveProjectsLS(user.uid, { projects: seed, activeProjectId: seed[0]?.id });
+}
+
   }, [authReady, user?.uid]);
 
   useEffect(() => {
@@ -277,33 +319,38 @@ export default function AppPage() {
   }, [projects, activeProjectId]);
 
   const activeTabMessages = useMemo(() => {
-    if (!activeProject) return [];
-    if (activeTab === "chat") return activeProject.tabs?.chat?.messages || [];
-    if (activeTab === "images") return activeProject.tabs?.images?.messages || [];
-    if (activeTab === "code") return activeProject.tabs?.code?.messages || [];
-    return [];
-  }, [activeProject, activeTab]);
+  if (!activeProject) return [];
+  if (activeTab === "chat") return activeProject.tabs?.chat?.messages || [];
+  if (activeTab === "images") return activeProject.tabs?.images?.messages || [];
+  if (activeTab === "code") return activeProject.tabs?.code?.messages || [];
+  // ✅ Studio y Excel no se tratan como messages aquí
+  return [];
+}, [activeProject, activeTab]);
+
 
   const totalMessages = useMemo(() => {
-    const p = activeProject;
-    if (!p?.tabs) return 0;
-    const c = p.tabs.chat?.messages?.length || 0;
-    const i = p.tabs.images?.messages?.length || 0;
-    const k = p.tabs.code?.messages?.length || 0;
-    return c + i + k;
-  }, [activeProject]);
+  const p = activeProject;
+  if (!p?.tabs) return 0;
+  const c = p.tabs.chat?.messages?.length || 0;
+  const i = p.tabs.images?.messages?.length || 0;
+  const k = p.tabs.code?.messages?.length || 0;
+  const s = p.tabs.studio?.docs?.length || 0;
+  return c + i + k + s;
+}, [activeProject]);
+
 
   const totalWords = useMemo(() => {
-    const p = activeProject;
-    if (!p?.tabs) return 0;
-    const all = [
-      ...(p.tabs.chat?.messages || []),
-      ...(p.tabs.images?.messages || []),
-      ...(p.tabs.code?.messages || []),
-    ];
-    const txt = all.map((m) => m.text || "").join(" ");
-    return txt.trim() ? txt.trim().split(/\s+/).length : 0;
-  }, [activeProject]);
+  const p = activeProject;
+  if (!p?.tabs) return 0;
+  const all = [
+    ...(p.tabs.chat?.messages || []),
+    ...(p.tabs.images?.messages || []),
+    ...(p.tabs.code?.messages || []),
+  ];
+  const txt = all.map((m) => m.text || "").join(" ");
+  return txt.trim() ? txt.trim().split(/\s+/).length : 0;
+}, [activeProject]);
+
 
   const sortedProjects = useMemo(() => {
     const arr = [...(projects || [])];
@@ -361,18 +408,21 @@ export default function AppPage() {
   };
 
   const pinnedMessagesForTab = useMemo(() => {
-    const p = activeProject;
-    if (!p?.tabs) return [];
-    const msgs =
-      activeTab === "chat"
-        ? p.tabs.chat?.messages || []
-        : activeTab === "images"
-        ? p.tabs.images?.messages || []
-        : activeTab === "code"
-        ? p.tabs.code?.messages || []
-        : [];
-    return msgs.filter((m) => m.pinned);
-  }, [activeProject, activeTab]);
+  const p = activeProject;
+  if (!p?.tabs) return [];
+
+  const msgs =
+    activeTab === "chat"
+      ? p.tabs.chat?.messages || []
+      : activeTab === "images"
+      ? p.tabs.images?.messages || []
+      : activeTab === "code"
+      ? p.tabs.code?.messages || []
+      : [];
+
+  return msgs.filter((m) => m.pinned);
+}, [activeProject, activeTab]);
+
 
   const scrollToMessage = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
@@ -1094,21 +1144,22 @@ const resetExcelMeta = () => {
   };
 
   const resetProject = (id) => {
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        const tabs = {
-          chat: { messages: [] },
-          images: { messages: [] },
-          code: { messages: [] },
-          excel: p.tabs?.excel || { meta: {} },
-        };
-        return { ...p, tabs, updatedAt: uidNow() };
-      })
-    );
-    setOpenMenuId(null);
-    toast("Reset", "Mensajes borrados", "warn");
-  };
+  setProjects((prev) =>
+    prev.map((p) => {
+      if (p.id !== id) return p;
+      const tabs = {
+        chat: { messages: [] },
+        images: { messages: [] },
+        code: { messages: [] },
+        studio: { meta: { activeDocId: null, lastTemplate: null }, docs: [] },
+        excel: { meta: {} },
+      };
+      return { ...p, tabs, updatedAt: uidNow() };
+    })
+  );
+  setOpenMenuId(null);
+  toast("Reset", "Mensajes borrados", "warn");
+};
 
   /* ----------------------------- UX: Quick Actions (local) ----------------------------- */
   const quickForTab = (tabKey, kind) => {
@@ -1349,6 +1400,9 @@ const resetExcelMeta = () => {
               <span style={miniTabPill(activeTab === "images")} onClick={() => setActiveTab("images")}>
                 🖼️ Images
               </span>
+              <span style={miniTabPill(activeTab === "studio")} onClick={() => setActiveTab("studio")}>
+                 🎛️ Studio
+               </span>
               <span style={miniTabPill(activeTab === "excel")} onClick={() => setActiveTab("excel")}>
                 📄 Excel
               </span>
@@ -1601,6 +1655,25 @@ const resetExcelMeta = () => {
                   </div>
                 </>
               )}
+
+              {/* STUDIO */}
+                {activeTab === "studio" && (
+                  <div style={{ height: "100%", overflow: "hidden" }}>
+                   <StudioCanvas
+                   projectId={activeProjectId}
+                    studio={activeProject?.tabs?.studio || { meta: {}, docs: [] }}
+                    onChange={(nextStudio) => {
+                     updateActiveProject((p) => {
+                       const tabs = { ...(p.tabs || {}) };
+                     tabs.studio = nextStudio;
+                         return { ...p, tabs };
+                       });
+                    }}
+                   />
+                </div>
+               )}
+
+
 
               {/* CODE */}
               {activeTab === "code" && (
