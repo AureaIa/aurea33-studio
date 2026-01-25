@@ -193,6 +193,40 @@ export default function AppPage() {
   // UI
   const [activeTab, setActiveTab] = useState("images");
 
+// Theme (light / dark)
+const [theme, setTheme] = useState("light"); // "light" | "dark"
+
+const themeVars = useMemo(() => {
+  if (theme === "dark") {
+    return {
+      "--bg": "#0b0b0c",
+      "--panel": "rgba(255,255,255,0.03)",
+      "--panel2": "rgba(0,0,0,0.28)",
+      "--border": "rgba(255,255,255,0.08)",
+      "--text": "#ffffff",
+      "--muted": "rgba(255,255,255,0.72)",
+      "--gold": "#f7c600",
+      "--shadow": "0 18px 60px rgba(0,0,0,0.55)",
+      "--blur": "blur(10px)",
+    };
+  }
+
+  // 🌤 Light premium (blanco / gris)
+  return {
+    "--bg": "#F4F5F7",
+    "--panel": "#FFFFFF",
+    "--panel2": "#FFFFFF",
+    "--border": "rgba(15,23,42,0.10)",
+    "--text": "#0F172A",
+    "--muted": "rgba(15,23,42,0.65)",
+    "--gold": "#C9A227",
+    "--shadow": "0 18px 60px rgba(2,6,23,0.10)",
+    "--blur": "blur(10px)",
+  };
+}, [theme]);
+
+
+
   // Projects (persist)
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
@@ -1289,7 +1323,7 @@ const resetExcelMeta = () => {
         <title>AUREA 33 Studio</title>
       </Head>
 
-      <div style={page(compact)}>
+      <div style={{ ...page(compact), ...themeVars }}>
         <div style={ambientGrid()} />
         <div style={ambientGlow()} />
 
@@ -1319,7 +1353,14 @@ const resetExcelMeta = () => {
             <button onClick={() => setPaletteOpen(true)} style={btnGhost()}>
               Comandos (Ctrl+K)
             </button>
-
+           ----------NUEVO BOTON THEME-------------------
+              <button
+               onClick={() => setTheme(t => (t === "light" ? "dark" : "light"))}
+               style={btnGhost()}
+>
+               {theme === "light" ? "☀️ Light" : "🌙 Dark"}
+              </button>
+-----------------------FIN NUEVOO BOTON THEME ---------------------------------------
             <button onClick={() => setInspectorOpen((v) => !v)} style={btnGhost()}>
               {inspectorOpen ? "✓ Inspector" : "Inspector"}
             </button>
