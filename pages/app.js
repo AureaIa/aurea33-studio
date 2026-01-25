@@ -1353,14 +1353,14 @@ const resetExcelMeta = () => {
             <button onClick={() => setPaletteOpen(true)} style={btnGhost()}>
               Comandos (Ctrl+K)
             </button>
-           ----------NUEVO BOTON THEME-------------------
+           
               <button
                onClick={() => setTheme(t => (t === "light" ? "dark" : "light"))}
                style={btnGhost()}
 >
                {theme === "light" ? "☀️ Light" : "🌙 Dark"}
               </button>
------------------------FIN NUEVOO BOTON THEME ---------------------------------------
+
             <button onClick={() => setInspectorOpen((v) => !v)} style={btnGhost()}>
               {inspectorOpen ? "✓ Inspector" : "Inspector"}
             </button>
