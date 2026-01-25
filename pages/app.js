@@ -207,7 +207,7 @@ export default function AppPage() {
   const [genStatus, setGenStatus] = useState("");
 
   // HUD/Inspector
-  const [hudOpen, setHudOpen] = useState(true);
+  const [hudOpen, setHudOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [compact, setCompact] = useState(false);
 
