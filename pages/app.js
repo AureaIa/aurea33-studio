@@ -193,9 +193,70 @@ export default function AppPage() {
   // UI
   const [activeTab, setActiveTab] = useState("images");
 
-// Theme (light / dark)
-const [theme, setTheme] = useState("light"); // "light" | "dark"
+// -----------------------------
+// Theme (light / dark) ✅ FULL
+// -----------------------------
 
+// 1) State
+const [theme, setTheme] = useState("dark"); // "light" | "dark"
+
+// 2) Load theme on mount (localStorage)
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  const saved = localStorage.getItem("aurea33:theme");
+  if (saved === "light" || saved === "dark") setTheme(saved);
+}, []);
+
+// 3) Persist theme
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("aurea33:theme", theme);
+}, [theme]);
+
+// 4) Toggle helper
+const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
+const mobileOverlay = () => ({
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.55)",
+  backdropFilter: "blur(6px)",
+  zIndex: 9998,
+});
+
+const mobileDrawer = (open) => ({
+  position: "fixed",
+  top: 0,
+  left: 0,
+  bottom: 0,
+  width: "min(86vw, 380px)",
+  background: "rgba(10,12,18,0.92)",
+  borderRight: "1px solid rgba(255,255,255,0.08)",
+  boxShadow: "0 20px 80px rgba(0,0,0,0.55)",
+  zIndex: 9999,
+  transform: open ? "translateX(0)" : "translateX(-102%)",
+  transition: "transform 180ms ease-out",
+  display: "flex",
+  flexDirection: "column",
+});
+
+
+const drawerHeader = () => ({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "12px 12px",
+  borderBottom: "1px solid rgba(255,255,255,0.08)",
+});
+
+const drawerBody = () => ({
+  padding: 12,
+  overflow: "auto",
+  flex: 1,
+});
+
+
+// 5) Vars (CSS custom props)
 const themeVars = useMemo(() => {
   if (theme === "dark") {
     return {
@@ -224,6 +285,16 @@ const themeVars = useMemo(() => {
     "--blur": "blur(10px)",
   };
 }, [theme]);
+
+// 6) Base styles helpers (opcional pero recomendado)
+const uiBase = useMemo(
+  () => ({
+    background: "var(--bg)",
+    color: "var(--text)",
+    minHeight: "100vh",
+  }),
+  []
+);
 
 
 
@@ -263,6 +334,37 @@ const themeVars = useMemo(() => {
 
   // For project menus
   const [openMenuId, setOpenMenuId] = useState(null);
+
+  // For MobileApp
+  const [isMobile, setIsMobile] = useState(false);
+
+useEffect(() => {
+  const onResize = () => setIsMobile(window.innerWidth < 980);
+  onResize();
+  window.addEventListener("resize", onResize);
+  return () => window.removeEventListener("resize", onResize);
+}, []);
+
+const [sidebarOpen, setSidebarOpen] = useState(false);
+
+useEffect(() => {
+  if (!isMobile) return;
+
+  const onKey = (e) => {
+    if (e.key === "Escape") setSidebarOpen(false);
+  };
+  window.addEventListener("keydown", onKey);
+
+  // bloquear scroll cuando drawer abierto
+  const prevOverflow = document.body.style.overflow;
+  if (sidebarOpen) document.body.style.overflow = "hidden";
+
+  return () => {
+    window.removeEventListener("keydown", onKey);
+    document.body.style.overflow = prevOverflow;
+  };
+}, [isMobile, sidebarOpen]);
+
 
   /* ----------------------------- Toasts ----------------------------- */
   const toast = (title, detail = "", kind = "ok", ms = 2800) => {
@@ -1345,25 +1447,68 @@ const resetExcelMeta = () => {
               </div>
             </div>
           </div>
+{/* ✅ Mobile Drawer (MENÚ) */}
+{isMobile && (
+  <>
+    {sidebarOpen && (
+      <div style={mobileOverlay()} onClick={() => setSidebarOpen(false)} />
+    )}
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button onClick={() => setSearchOpen(true)} style={btnGhost()}>
-              Buscar (Ctrl+F)
-            </button>
-            <button onClick={() => setPaletteOpen(true)} style={btnGhost()}>
-              Comandos (Ctrl+K)
-            </button>
-           
-              <button
-               onClick={() => setTheme(t => (t === "light" ? "dark" : "light"))}
-               style={btnGhost()}
+    <div style={mobileDrawer(sidebarOpen)}>
+      <div style={drawerHeader()}>
+        <div style={{ fontWeight: 900, letterSpacing: 0.4 }}>
+          AUREA 33 MENU
+        </div>
+
+        <button onClick={() => setSidebarOpen(false)} style={btnGhost()}>
+          ✕
+        </button>
+      </div>
+
+      <div style={drawerBody()}>
+        <MobileSidebarContent />
+      </div>
+    </div>
+  </>
+)}
+
+          <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  }}
 >
-               {theme === "light" ? "☀️ Light" : "🌙 Dark"}
-              </button>
+  {isMobile && (
+    <button
+      onClick={() => setSidebarOpen(true)}
+      style={btnGhost()}
+      title="Menú"
+    >
+      ☰
+    </button>
+  )}
 
-            <button onClick={() => setInspectorOpen((v) => !v)} style={btnGhost()}>
-              {inspectorOpen ? "✓ Inspector" : "Inspector"}
-            </button>
+  <button onClick={() => setSearchOpen(true)} style={btnGhost()}>
+    Buscar (Ctrl+F)
+  </button>
+
+  <button onClick={() => setPaletteOpen(true)} style={btnGhost()}>
+    Comandos (Ctrl+K)
+  </button>
+
+  <button
+    onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+    style={btnGhost()}
+  >
+    {theme === "light" ? "🌞 Light" : "🌙 Dark"}
+  </button>
+
+  <button onClick={() => setInspectorOpen((v) => !v)} style={btnGhost()}>
+    Inspector
+  </button>
+
             <button onClick={() => setHudOpen((v) => !v)} style={btnGhost()}>
               {hudOpen ? "✓ HUD" : "HUD"}
             </button>
@@ -1385,7 +1530,8 @@ const resetExcelMeta = () => {
         {/* Main */}
         <div style={layout(compact)}>
           {/* Sidebar */}
-          <aside style={sidebar()}>
+          <aside style={{ ...sidebar(), ...(isMobile ? { display: "none" } : {}) }}>
+
             <div style={sidebarHeader()}>
               <div style={{ fontWeight: 900 }}>AUREA CORE</div>
               <div style={{ fontSize: 12, opacity: 0.7 }}>
