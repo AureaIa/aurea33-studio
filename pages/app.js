@@ -1419,6 +1419,191 @@ const resetExcelMeta = () => {
   const excelMeta = activeProject?.tabs?.excel?.meta || {};
   const apiExcelStatus = excelMeta?.lastOkAt ? "ok" : excelMeta?.lastError ? "error" : "—";
 
+/* ✅ AQUÍ MISMO, ANTES DEL return */
+const SidebarContent = () => (
+  <>
+    <div style={sidebarHeader()}>
+      <div style={{ fontWeight: 900 }}>AUREA CORE</div>
+      <div style={{ fontSize: 12, opacity: 0.7 }}>
+        Proyectos persistentes • Tabs fijos • Historial local
+      </div>
+    </div>
+
+    <div style={sidebarActions()}>
+      <div style={{ fontWeight: 900, opacity: 0.9 }}>PROYECTOS</div>
+      <button style={btnGhostSmall()} onClick={createNewProject}>
+        + Nuevo
+      </button>
+    </div>
+
+    {/* Live Metrics */}
+    <div style={metricsWrap()}>
+      <div style={metricCard()}>
+        <div style={metricLabel()}>Mensajes</div>
+        <div style={metricValue()}>{totalMessages}</div>
+      </div>
+      <div style={metricCard()}>
+        <div style={metricLabel()}>Palabras</div>
+        <div style={metricValue()}>{totalWords}</div>
+      </div>
+      <div style={metricCardWide()}>
+        <div style={metricLabel()}>Último</div>
+        <div style={metricValueSmall()}>{new Date(uidNow()).toLocaleString()}</div>
+      </div>
+
+      <div style={metricCardWide(activeTab === "chat" ? "ok" : "idle")}>
+        <div style={metricLabel()}>API Chat</div>
+        <div style={metricValueSmall()}>{activeTab === "chat" ? "ok" : "—"}</div>
+      </div>
+      <div style={metricCardWide(activeTab === "code" ? "ok" : "idle")}>
+        <div style={metricLabel()}>API Code</div>
+        <div style={metricValueSmall()}>{activeTab === "code" ? "ok" : "unknown"}</div>
+      </div>
+      <div
+        style={metricCardWide(
+          apiExcelStatus === "ok" ? "ok" : apiExcelStatus === "error" ? "err" : "idle"
+        )}
+      >
+        <div style={metricLabel()}>API Excel</div>
+        <div style={metricValueSmall()}>{apiExcelStatus}</div>
+      </div>
+    </div>
+
+    <div style={miniTabsRow()}>
+      <span style={miniTabPill(activeTab === "chat")} onClick={() => setActiveTab("chat")}>
+        💬 Chat
+      </span>
+      <span style={miniTabPill(activeTab === "code")} onClick={() => setActiveTab("code")}>
+        🧠 Code
+      </span>
+      <span style={miniTabPill(activeTab === "images")} onClick={() => setActiveTab("images")}>
+        🖼️ Images
+      </span>
+      <span style={miniTabPill(activeTab === "studio")} onClick={() => setActiveTab("studio")}>
+        🎛️ Studio
+      </span>
+      <span style={miniTabPill(activeTab === "excel")} onClick={() => setActiveTab("excel")}>
+        📄 Excel
+      </span>
+    </div>
+
+    <div style={projectList()}>
+      {sortedProjects.map((p) => {
+        const active = p.id === activeProjectId;
+        return (
+          <div
+            key={p.id}
+            style={projectItem(active)}
+            onClick={() => setActiveProjectId(p.id)}
+            title={p.title}
+          >
+            <div style={projectTitle()}>
+              {p.pinned ? "⭐ " : ""}
+              {p.title}
+            </div>
+            <div style={projectSub()}>
+              {new Date(p.updatedAt || p.createdAt).toLocaleString()}
+            </div>
+
+            <button
+              style={miniPill()}
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = prompt("Renombrar proyecto:", p.title);
+                if (next && next.trim()) renameProject(p.id, next.trim());
+              }}
+              title="Renombrar"
+            >
+              ✏️
+            </button>
+
+            <button
+              style={miniPillDots(active)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenMenuId((v) => (v === p.id ? null : p.id));
+              }}
+              title="Más acciones"
+            >
+              ⋯
+            </button>
+
+            {openMenuId === p.id && (
+              <div style={menuPanel()} onClick={(e) => e.stopPropagation()}>
+                <button style={menuItem()} onClick={() => toggleProjectPin(p.id)}>
+                  {p.pinned ? "⭐ Desfijar proyecto" : "⭐ Fijar proyecto"}
+                </button>
+
+                <button style={menuItem()} onClick={() => duplicateProject(p.id)}>
+                  📄 Duplicar
+                </button>
+                <button style={menuItem()} onClick={() => exportProject(p.id)}>
+                  ⬇️ Exportar JSON
+                </button>
+
+                <div style={menuSep()} />
+
+                <button
+                  style={menuItem()}
+                  onClick={() => {
+                    setActiveProjectId(p.id);
+                    setTimeout(() => exportConversationTxt(activeTab === "excel" ? "chat" : activeTab), 0);
+                    setOpenMenuId(null);
+                  }}
+                >
+                  🧾 Exportar TAB a TXT
+                </button>
+
+                <button
+                  style={menuItem()}
+                  onClick={() => {
+                    setActiveProjectId(p.id);
+                    setTimeout(() => exportConversationPdf(activeTab === "excel" ? "chat" : activeTab), 0);
+                    setOpenMenuId(null);
+                  }}
+                >
+                  🖨️ Exportar TAB a PDF
+                </button>
+
+                <div style={menuSep()} />
+
+                <button
+                  style={menuItem()}
+                  onClick={() => {
+                    const ok = confirm("¿Resetear mensajes de este proyecto? (no borra el proyecto)");
+                    if (ok) resetProject(p.id);
+                  }}
+                >
+                  ↩️ Reset mensajes
+                </button>
+
+                <div style={menuSep()} />
+
+                <button
+                  style={menuItemDanger()}
+                  onClick={() => {
+                    const ok = confirm("¿Eliminar este proyecto? Esto no se puede deshacer.");
+                    if (ok) deleteProject(p.id);
+                  }}
+                >
+                  🗑️ Eliminar
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <div style={{ fontSize: 12, opacity: 0.55, marginTop: 8 }}>
+        Tip: 1 proyecto = 1 cliente / campaña / tarea
+      </div>
+    </div>
+  </>
+);
+
+const MobileSidebarContent = SidebarContent;
+
+
   return (
     <>
       <Head>
@@ -1530,181 +1715,10 @@ const resetExcelMeta = () => {
         {/* Main */}
         <div style={layout(compact)}>
           {/* Sidebar */}
-          <aside style={{ ...sidebar(), ...(isMobile ? { display: "none" } : {}) }}>
+         <aside style={{ ...sidebar(), ...(isMobile ? { display: "none" } : {}) }}>
+  <SidebarContent />
+</aside>
 
-            <div style={sidebarHeader()}>
-              <div style={{ fontWeight: 900 }}>AUREA CORE</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>
-                Proyectos persistentes • Tabs fijos • Historial local
-              </div>
-            </div>
-
-            <div style={sidebarActions()}>
-              <div style={{ fontWeight: 900, opacity: 0.9 }}>PROYECTOS</div>
-              <button style={btnGhostSmall()} onClick={createNewProject}>
-                + Nuevo
-              </button>
-            </div>
-
-            {/* Live Metrics */}
-            <div style={metricsWrap()}>
-              <div style={metricCard()}>
-                <div style={metricLabel()}>Mensajes</div>
-                <div style={metricValue()}>{totalMessages}</div>
-              </div>
-              <div style={metricCard()}>
-                <div style={metricLabel()}>Palabras</div>
-                <div style={metricValue()}>{totalWords}</div>
-              </div>
-              <div style={metricCardWide()}>
-                <div style={metricLabel()}>Último</div>
-                <div style={metricValueSmall()}>{new Date(uidNow()).toLocaleString()}</div>
-              </div>
-
-              <div style={metricCardWide(activeTab === "chat" ? "ok" : "idle")}>
-                <div style={metricLabel()}>API Chat</div>
-                <div style={metricValueSmall()}>{activeTab === "chat" ? "ok" : "—"}</div>
-              </div>
-              <div style={metricCardWide(activeTab === "code" ? "ok" : "idle")}>
-                <div style={metricLabel()}>API Code</div>
-                <div style={metricValueSmall()}>{activeTab === "code" ? "ok" : "unknown"}</div>
-              </div>
-              <div style={metricCardWide(apiExcelStatus === "ok" ? "ok" : apiExcelStatus === "error" ? "err" : "idle")}>
-                <div style={metricLabel()}>API Excel</div>
-                <div style={metricValueSmall()}>{apiExcelStatus}</div>
-              </div>
-            </div>
-
-            <div style={miniTabsRow()}>
-              <span style={miniTabPill(activeTab === "chat")} onClick={() => setActiveTab("chat")}>
-                💬 Chat
-              </span>
-              <span style={miniTabPill(activeTab === "code")} onClick={() => setActiveTab("code")}>
-                🧠 Code
-              </span>
-              <span style={miniTabPill(activeTab === "images")} onClick={() => setActiveTab("images")}>
-                🖼️ Images
-              </span>
-              <span style={miniTabPill(activeTab === "studio")} onClick={() => setActiveTab("studio")}>
-                 🎛️ Studio
-               </span>
-              <span style={miniTabPill(activeTab === "excel")} onClick={() => setActiveTab("excel")}>
-                📄 Excel
-              </span>
-            </div>
-
-            <div style={projectList()}>
-              {sortedProjects.map((p) => {
-                const active = p.id === activeProjectId;
-                return (
-                  <div
-                    key={p.id}
-                    style={projectItem(active)}
-                    onClick={() => setActiveProjectId(p.id)}
-                    title={p.title}
-                  >
-                    <div style={projectTitle()}>
-                      {p.pinned ? "⭐ " : ""}
-                      {p.title}
-                    </div>
-                    <div style={projectSub()}>
-                      {new Date(p.updatedAt || p.createdAt).toLocaleString()}
-                    </div>
-
-                    <button
-                      style={miniPill()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const next = prompt("Renombrar proyecto:", p.title);
-                        if (next && next.trim()) renameProject(p.id, next.trim());
-                      }}
-                      title="Renombrar"
-                    >
-                      ✏️
-                    </button>
-
-                    <button
-                      style={miniPillDots(active)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenMenuId((v) => (v === p.id ? null : p.id));
-                      }}
-                      title="Más acciones"
-                    >
-                      ⋯
-                    </button>
-
-                    {openMenuId === p.id && (
-                      <div style={menuPanel()} onClick={(e) => e.stopPropagation()}>
-                        <button style={menuItem()} onClick={() => toggleProjectPin(p.id)}>
-                          {p.pinned ? "⭐ Desfijar proyecto" : "⭐ Fijar proyecto"}
-                        </button>
-
-                        <button style={menuItem()} onClick={() => duplicateProject(p.id)}>
-                          📄 Duplicar
-                        </button>
-                        <button style={menuItem()} onClick={() => exportProject(p.id)}>
-                          ⬇️ Exportar JSON
-                        </button>
-
-                        <div style={menuSep()} />
-
-                        <button
-                          style={menuItem()}
-                          onClick={() => {
-                            setActiveProjectId(p.id);
-                            setTimeout(() => exportConversationTxt(activeTab === "excel" ? "chat" : activeTab), 0);
-                            setOpenMenuId(null);
-                          }}
-                        >
-                          🧾 Exportar TAB a TXT
-                        </button>
-
-                        <button
-                          style={menuItem()}
-                          onClick={() => {
-                            setActiveProjectId(p.id);
-                            setTimeout(() => exportConversationPdf(activeTab === "excel" ? "chat" : activeTab), 0);
-                            setOpenMenuId(null);
-                          }}
-                        >
-                          🖨️ Exportar TAB a PDF
-                        </button>
-
-                        <div style={menuSep()} />
-
-                        <button
-                          style={menuItem()}
-                          onClick={() => {
-                            const ok = confirm("¿Resetear mensajes de este proyecto? (no borra el proyecto)");
-                            if (ok) resetProject(p.id);
-                          }}
-                        >
-                          ↩️ Reset mensajes
-                        </button>
-
-                        <div style={menuSep()} />
-
-                        <button
-                          style={menuItemDanger()}
-                          onClick={() => {
-                            const ok = confirm("¿Eliminar este proyecto? Esto no se puede deshacer.");
-                            if (ok) deleteProject(p.id);
-                          }}
-                        >
-                          🗑️ Eliminar
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              <div style={{ fontSize: 12, opacity: 0.55, marginTop: 8 }}>
-                Tip: 1 proyecto = 1 cliente / campaña / tarea
-              </div>
-            </div>
-          </aside>
 
           {/* Content */}
           <main style={mainCard()}>
