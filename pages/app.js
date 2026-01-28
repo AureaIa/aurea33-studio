@@ -181,6 +181,31 @@ function copyToClipboard(text) {
   }
 }
 
+function useIsMobile(breakpoint = 900) {
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+
+    const apply = () => setIsMobile(!!mq.matches);
+    apply();
+
+    // compat Safari/old
+    if (mq.addEventListener) mq.addEventListener("change", apply);
+    else mq.addListener(apply);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", apply);
+      else mq.removeListener(apply);
+    };
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
+
 /* ----------------------------- App Page ----------------------------- */
 
 export default function AppPage() {
@@ -336,26 +361,30 @@ const uiBase = useMemo(
   const [openMenuId, setOpenMenuId] = useState(null);
 
   // For MobileApp
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile(980);
 
-useEffect(() => {
-  const onResize = () => setIsMobile(window.innerWidth < 980);
-  onResize();
-  window.addEventListener("resize", onResize);
-  return () => window.removeEventListener("resize", onResize);
-}, []);
+// hydration guard (CLAVE)
+const [hydrated, setHydrated] = useState(false);
+useEffect(() => setHydrated(true), []);
+
+const safeIsMobile = hydrated ? isMobile : false;
 
 const [sidebarOpen, setSidebarOpen] = useState(false);
 
+
 useEffect(() => {
-  if (!isMobile) return;
+  if (!safeIsMobile) {
+    setSidebarOpen(false);
+    document.body.style.overflow = "";
+    return;
+  }
 
   const onKey = (e) => {
     if (e.key === "Escape") setSidebarOpen(false);
   };
+
   window.addEventListener("keydown", onKey);
 
-  // bloquear scroll cuando drawer abierto
   const prevOverflow = document.body.style.overflow;
   if (sidebarOpen) document.body.style.overflow = "hidden";
 
@@ -363,7 +392,8 @@ useEffect(() => {
     window.removeEventListener("keydown", onKey);
     document.body.style.overflow = prevOverflow;
   };
-}, [isMobile, sidebarOpen]);
+}, [safeIsMobile, sidebarOpen]);
+
 
 
   /* ----------------------------- Toasts ----------------------------- */
@@ -1633,7 +1663,7 @@ const MobileSidebarContent = SidebarContent;
             </div>
           </div>
 {/* ✅ Mobile Drawer (MENÚ) */}
-{isMobile && (
+{safeisMobile && (
   <>
     {sidebarOpen && (
       <div style={mobileOverlay()} onClick={() => setSidebarOpen(false)} />
