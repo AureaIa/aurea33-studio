@@ -4,10 +4,17 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
-import StudioCanvas from "../components/studio/StudioCanvas";
+import dynamic from "next/dynamic";
+
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
 import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
+
+
+const StudioCanvas = dynamic(
+  () => import("../components/studio/StudioCanvas"),
+  { ssr: false }
+);
 
 const TABS = [
   { key: "chat", title: "Chat AUREA" },
@@ -1663,7 +1670,7 @@ const MobileSidebarContent = SidebarContent;
             </div>
           </div>
 {/* ✅ Mobile Drawer (MENÚ) */}
-{safeisMobile && (
+{safeIsMobile && (
   <>
     {sidebarOpen && (
       <div style={mobileOverlay()} onClick={() => setSidebarOpen(false)} />
