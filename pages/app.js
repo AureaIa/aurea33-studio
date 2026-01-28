@@ -182,9 +182,9 @@ function copyToClipboard(text) {
 }
 
 function useIsMobile(breakpoint = 900) {
-  const [isMobile, setIsMobile] = React.useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (typeof window === "undefined") return;
 
     const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
