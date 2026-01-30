@@ -2439,15 +2439,16 @@ function CmdBtn({ label, hint, onClick, danger }) {
 
 function page() {
   return {
-    minHeight: "100vh",
-    background: "#0b0b0c",
-    color: "#fff",
+    minHeight: "100dvh",
+    background: "var(--bg)",
+    color: "var(--text)",
     fontSize: 12,
     lineHeight: 1.35,
     letterSpacing: 0.2,
     overflow: "hidden",
   };
 }
+
 
 function ambientGrid() {
   return {
@@ -2481,14 +2482,15 @@ function topbar() {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "12px 16px",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid var(--border)",
     position: "sticky",
     top: 0,
-    background: "rgba(11,11,12,0.72)",
-    backdropFilter: "blur(10px)",
+    background: "var(--panel2)",
+    backdropFilter: "var(--blur)",
     zIndex: 30,
   };
 }
+
 
 function chip() {
   return {
@@ -2550,14 +2552,14 @@ function layout(compact) {
 
 function sidebar() {
   return {
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,255,255,0.06)",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
     borderRadius: 16,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
     minHeight: 0,
-    backdropFilter: "blur(8px)",
+    backdropFilter: "var(--blur)",
   };
 }
 
@@ -2772,14 +2774,14 @@ function menuSep() {
 
 function mainCard() {
   return {
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,255,255,0.06)",
+    background: "var(--panel)",
+    border: "1px solid var(--border)",
     borderRadius: 16,
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
     minHeight: 0,
-    backdropFilter: "blur(8px)",
+    backdropFilter: "var(--blur)",
   };
 }
 
@@ -3008,13 +3010,14 @@ function input() {
     flex: 1,
     padding: "12px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(0,0,0,0.35)",
-    color: "#fff",
+    border: "1px solid var(--border)",
+    background: "var(--panel2)",
+    color: "var(--text)",
     outline: "none",
     fontSize: 12,
   };
 }
+
 
 function btnPrimary() {
   return {
