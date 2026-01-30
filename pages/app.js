@@ -2537,10 +2537,16 @@ function layout(compact) {
     gridTemplateColumns: compact ? "290px 1fr 320px" : "320px 1fr 340px",
     gap: 14,
     padding: 14,
-    height: "calc(100vh - 64px)",
+
+    // 🔥 FULL SCREEN REAL
+    width: "100vw",
+    height: "100dvh",          // mejor que 100vh en navegadores modernos
+    overflow: "hidden",
+
     alignItems: "stretch",
   };
 }
+
 
 function sidebar() {
   return {
