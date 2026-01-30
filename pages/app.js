@@ -1750,7 +1750,8 @@ const MobileSidebarContent = SidebarContent;
         </div>
 
         {/* Main */}
-        <div style={layout(compact)}>
+        <div style={layout(compact, hudOpen || inspectorOpen)}>
+
           {/* Sidebar */}
          <aside style={{ ...sidebar(), ...(isMobile ? { display: "none" } : {}) }}>
   <SidebarContent />
@@ -2511,12 +2512,13 @@ function chipSoft() {
     alignItems: "center",
     padding: "4px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
-    color: "#fff",
+    border: "1px solid var(--border)",
+    background: "var(--panel)",
+    color: "var(--text)",
     fontWeight: 800,
   };
 }
+
 
 function logoCircle() {
   return {
@@ -2533,18 +2535,19 @@ function logoCircle() {
   };
 }
 
-function layout(compact) {
+function layout(compact, rightOpen) {
+  const left = compact ? 290 : 320;
+  const right = compact ? 320 : 340;
+
   return {
     display: "grid",
-    gridTemplateColumns: compact ? "290px 1fr 320px" : "320px 1fr 340px",
+    gridTemplateColumns: rightOpen ? `${left}px 1fr ${right}px` : `${left}px 1fr`,
     gap: 14,
     padding: 14,
 
-    // 🔥 FULL SCREEN REAL
     width: "100vw",
-    height: "100dvh",          // mejor que 100vh en navegadores modernos
+    height: "100dvh",
     overflow: "hidden",
-
     alignItems: "stretch",
   };
 }
@@ -2746,13 +2749,14 @@ function menuItem() {
     padding: "10px 12px",
     border: "none",
     background: "transparent",
-    color: "#fff",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid var(--border)",
   };
 }
+
 
 function menuItemDanger() {
   return {
@@ -2781,9 +2785,14 @@ function mainCard() {
     display: "flex",
     flexDirection: "column",
     minHeight: 0,
+
+    // ✅ CLAVE para grid layouts
+    minWidth: 0,
+
     backdropFilter: "var(--blur)",
   };
 }
+
 
 function tabsBar() {
   return {
@@ -2799,14 +2808,15 @@ function tabBtn(active) {
   return {
     padding: "8px 12px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: active ? "#f7c600" : "transparent",
-    color: active ? "#111" : "#fff",
+    border: "1px solid var(--border)",
+    background: active ? "var(--gold)" : "transparent",
+    color: active ? "#111" : "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
   };
 }
+
 
 function statusPill(kind) {
   const base = {
@@ -2847,8 +2857,12 @@ function mainBody() {
     gap: 12,
     minHeight: 0,
     height: "100%",
+
+    // ✅ CLAVE
+    minWidth: 0,
   };
 }
+
 
 function statusLine() {
   return { fontSize: 12, opacity: 0.95, fontWeight: 900, color: "#f7c600" };
@@ -2957,7 +2971,7 @@ function badge(type) {
 
 function bubble(isUser, compact) {
   return {
-    maxWidth: 760,
+    maxWidth: 980,
     padding: compact ? 10 : 12,
     borderRadius: 14,
     background: isUser ? "rgba(47,107,255,0.88)" : "rgba(255,255,255,0.04)",
@@ -3036,14 +3050,15 @@ function btnGhost() {
   return {
     padding: "10px 12px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.12)",
+    border: "1px solid var(--border)",
     background: "transparent",
-    color: "#fff",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
   };
 }
+
 
 function btnDanger() {
   return {
@@ -3062,14 +3077,15 @@ function btnGhostSmall() {
   return {
     padding: "6px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.12)",
+    border: "1px solid var(--border)",
     background: "transparent",
-    color: "#fff",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
   };
 }
+
 
 function btnGhostLink() {
   return {
