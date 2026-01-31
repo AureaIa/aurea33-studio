@@ -16,6 +16,20 @@ function uid() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/* ----------------------------- Presets (Paso 1) ----------------------------- */
+
+const CANVAS_PRESETS = [
+  { key: "ig_post", label: "Instagram Post 1:1 (1080×1080)", w: 1080, h: 1080 },
+  { key: "ig_story", label: "Instagram Story 9:16 (1080×1920)", w: 1080, h: 1920 },
+  { key: "ig_reel", label: "Reel Cover 9:16 (1080×1920)", w: 1080, h: 1920 },
+  { key: "fb_post", label: "Facebook Post 1:1 (1080×1080)", w: 1080, h: 1080 },
+  { key: "fb_cover", label: "Facebook Cover (1640×624)", w: 1640, h: 624 },
+  { key: "portrait_4_5", label: "Vertical 4:5 (1080×1350)", w: 1080, h: 1350 },
+  { key: "yt_thumb", label: "YouTube Thumb 16:9 (1280×720)", w: 1280, h: 720 },
+  { key: "hd_16_9", label: "HD 16:9 (1920×1080)", w: 1920, h: 1080 },
+  { key: "a4", label: "A4 (2480×3508)", w: 2480, h: 3508 },
+];
+
 /* ----------------------------- Component ----------------------------- */
 
 export default function StudioCanvas({ doc, onChange, compact = false }) {
@@ -28,6 +42,12 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  // Text editing overlay (Paso 1)
+  const [editingId, setEditingId] = useState(null);
+  const [editingValue, setEditingValue] = useState("");
+  const [editingBox, setEditingBox] = useState(null); // { x,y,w,h, rotation, fill, fontFamily, fontSizePx }
+  const textareaRef = useRef(null);
 
   // Doc data (with safe defaults)
   const meta = doc?.meta || { w: 1080, h: 1080, bg: "#0B1220", zoom: 0.8, panX: 0, panY: 0 };
@@ -107,7 +127,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
     resize();
 
-    // Prefer ResizeObserver (more accurate than window resize only)
     const ro = new ResizeObserver(resize);
     ro.observe(el);
 
@@ -126,7 +145,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     const maxH = Math.max(1, containerSize.h - padding * 2);
 
     const fitScale = Math.min(maxW / meta.w, maxH / meta.h);
-    const baseFit = clamp(fitScale, 0.05, 1.5); // base fit to view
+    const baseFit = clamp(fitScale, 0.05, 1.5);
     const scale = baseFit * clamp(zoom, 0.1, 4);
 
     const w = meta.w * scale;
@@ -159,7 +178,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   const screenToDoc = useCallback(
     (sx, sy) => {
-      // Convert screen coords (stage space) to doc-space
       const dx = (sx - frame.x) / frame.scale;
       const dy = (sy - frame.y) / frame.scale;
       return { x: dx, y: dy };
@@ -182,6 +200,9 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     (e) => {
       const stage = e.target.getStage();
       const isEmpty = e.target === stage;
+
+      // If editing text and user clicks anywhere, commit/cancel handled by textarea handlers.
+      // We don't force close here to avoid weirdness.
 
       // Panning: SPACE + drag anywhere
       if (isSpaceDown) {
@@ -227,19 +248,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       if (!pointer) return;
 
       const oldZoom = clamp(zoom, 0.1, 4);
-
-      // Smooth zoom factor
       const direction = e.evt.deltaY > 0 ? -1 : 1;
       const factor = direction > 0 ? 1.08 : 1 / 1.08;
 
       const nextZoom = clamp(oldZoom * factor, 0.1, 4);
 
-      // Keep doc point under cursor fixed
-      // world (doc) coords under cursor with old scale
       const oldScale = frame.baseFit * oldZoom;
       const newScale = frame.baseFit * nextZoom;
 
-      // Compute doc coordinate under cursor using old scale + current pan
       const oldW = meta.w * oldScale;
       const oldH = meta.h * oldScale;
       const oldFrameX = (containerSize.w - oldW) / 2 + panX;
@@ -248,7 +264,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       const docX = (pointer.x - oldFrameX) / oldScale;
       const docY = (pointer.y - oldFrameY) / oldScale;
 
-      // Now compute required pan so that cursor stays on same doc point
       const newW = meta.w * newScale;
       const newH = meta.h * newScale;
 
@@ -269,16 +284,12 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     (e, nodeModel) => {
       const node = e.target;
 
-      // Konva gives us final screen-space props (already including our frame scaling),
-      // so we must convert back to doc-space.
       const scaleX = node.scaleX();
       const scaleY = node.scaleY();
 
-      // reset scale for clean values on Konva node
       node.scaleX(1);
       node.scaleY(1);
 
-      // Screen position -> doc position
       const docPos = screenToDoc(node.x(), node.y());
 
       if (nodeModel.type === "rect") {
@@ -296,7 +307,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       }
 
       if (nodeModel.type === "text") {
-        // For Text: treat vertical scale as font-size multiplier (doc-space)
         const baseFont = nodeModel.fontSize || 32;
         const nextFont = clamp(baseFont * scaleY, 8, 512);
 
@@ -311,15 +321,101 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     [frame.scale, screenToDoc, updateNode]
   );
 
+  /* ----------------------------- Text Editing (Paso 1) ----------------------------- */
+
+  const openTextEditor = useCallback(
+    (textNodeModel) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const konvaNode = stage.findOne(`#${textNodeModel.id}`);
+      if (!konvaNode) return;
+
+      // Get bounding box in stage coordinates
+      const box = konvaNode.getClientRect({ skipStroke: true });
+
+      // Put textarea over it
+      const padding = 6;
+      const w = Math.max(120, box.width + padding * 2);
+      const h = Math.max(32, box.height + padding * 2);
+
+      setEditingId(textNodeModel.id);
+      setEditingValue(textNodeModel.text || "");
+
+      setEditingBox({
+        x: box.x - padding,
+        y: box.y - padding,
+        w,
+        h,
+        rotation: textNodeModel.rotation || 0,
+        fill: textNodeModel.fill || "#E9EEF9",
+        fontFamily: textNodeModel.fontFamily || "Inter, system-ui",
+        fontSizePx: (textNodeModel.fontSize || 32) * frame.scale,
+        lineHeight: textNodeModel.lineHeight || 1.2,
+      });
+
+      // Select it too (Canva-style)
+      setSelected(textNodeModel.id);
+
+      // Focus next tick
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.select?.();
+        }
+      }, 0);
+    },
+    [frame.scale, setSelected]
+  );
+
+  const closeTextEditor = useCallback(
+    (mode) => {
+      if (!editingId) return;
+
+      const id = editingId;
+      const nextText = editingValue;
+
+      setEditingId(null);
+      setEditingBox(null);
+
+      if (mode === "commit") {
+        updateNode(id, { text: nextText });
+      }
+      // cancel => do nothing
+    },
+    [editingId, editingValue, updateNode]
+  );
+
+  // Close editor if canvas size/zoom/pan changes drastically (avoid misalignment)
+  useEffect(() => {
+    if (!editingId) return;
+    // We do a soft close commit to prevent "floating textarea"
+    closeTextEditor("commit");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta.w, meta.h, zoom, panX, panY]);
+
   /* ----------------------------- Keyboard shortcuts ----------------------------- */
 
   useEffect(() => {
     const onKeyDown = (ev) => {
+      // If editing text: special handling
+      if (editingId) {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          closeTextEditor("cancel");
+        }
+        // Enter to commit (Shift+Enter = newline)
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          closeTextEditor("commit");
+        }
+        return;
+      }
+
       if (isInputLike(document.activeElement)) return;
 
       if (ev.code === "Space") {
         setIsSpaceDown(true);
-        // prevent page scroll
         ev.preventDefault();
       }
 
@@ -339,7 +435,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         duplicateSelected();
       }
 
-      // Nudge with arrows
       const step = ev.shiftKey ? 10 : 1;
       if (ev.key === "ArrowLeft") {
         ev.preventDefault();
@@ -369,13 +464,43 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [deleteSelected, duplicateSelected, nudgeSelected, selectedId, setSelected]);
+  }, [deleteSelected, duplicateSelected, nudgeSelected, selectedId, setSelected, editingId, closeTextEditor]);
 
   /* ----------------------------- UI actions ----------------------------- */
 
   const zoomIn = () => commitMeta({ zoom: clamp(zoom + 0.1, 0.1, 4) });
   const zoomOut = () => commitMeta({ zoom: clamp(zoom - 0.1, 0.1, 4) });
   const fit = () => commitMeta({ panX: 0, panY: 0, zoom: 0.75 });
+
+  const applyPreset = (presetKey) => {
+    const p = CANVAS_PRESETS.find((x) => x.key === presetKey);
+    if (!p) return;
+    // Keep bg & reset view for clean feel
+    commitMeta({ w: p.w, h: p.h, panX: 0, panY: 0, zoom: 0.75 });
+    setSelected(null);
+  };
+
+  const exportPNG = () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    // Export only the frame (cropped), pixelRatio for sharpness
+    const uri = stage.toDataURL({
+      x: frame.x,
+      y: frame.y,
+      width: frame.w,
+      height: frame.h,
+      pixelRatio: 2,
+      mimeType: "image/png",
+    });
+
+    const a = document.createElement("a");
+    a.href = uri;
+    a.download = `aurea33_${meta.w}x${meta.h}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   // Cursor: show grab when space
   const cursorStyle = isSpaceDown || isPanning ? "grab" : selectedId ? "default" : "default";
@@ -410,8 +535,31 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
               Fit
             </button>
 
+            {/* Presets (Paso 1) */}
+            <select
+              className="ml-2 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs outline-none"
+              defaultValue="ig_post"
+              onChange={(e) => applyPreset(e.target.value)}
+              title="Tamaño del diseño"
+            >
+              {CANVAS_PRESETS.map((p) => (
+                <option key={p.key} value={p.key} className="bg-[#0B1220] text-white">
+                  {p.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Export (Paso 1) */}
+            <button
+              className="ml-2 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-100 text-xs"
+              onClick={exportPNG}
+              title="Export PNG"
+            >
+              Export PNG
+            </button>
+
             <div className="ml-2 text-white/50 text-[11px] hidden md:block">
-              <span className="text-white/70">Tips:</span> Wheel=Zoom • Space+Drag=Pan • Del=Delete • ⌘/Ctrl+D=Duplicate • Arrows=Nudge (Shift=fast)
+              <span className="text-white/70">Tips:</span> Wheel=Zoom • Space+Drag=Pan • Del=Delete • ⌘/Ctrl+D=Duplicate • Arrows=Nudge (Shift=fast) • DblClick Text=Edit (Enter=Save / Esc=Cancel)
             </div>
           </div>
 
@@ -419,6 +567,38 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             {meta.w}×{meta.h} • zoom {zoom.toFixed(2)}
           </div>
         </div>
+      )}
+
+      {/* Text Editor Overlay (Paso 1) */}
+      {editingId && editingBox && (
+        <textarea
+          ref={textareaRef}
+          value={editingValue}
+          onChange={(e) => setEditingValue(e.target.value)}
+          onBlur={() => closeTextEditor("commit")}
+          spellCheck={false}
+          style={{
+            position: "absolute",
+            left: `${editingBox.x}px`,
+            top: `${editingBox.y}px`,
+            width: `${editingBox.w}px`,
+            height: `${editingBox.h}px`,
+            padding: "8px 10px",
+            borderRadius: "12px",
+            border: "1px solid rgba(255,255,255,0.18)",
+            outline: "none",
+            background: "rgba(6,10,18,0.75)",
+            color: editingBox.fill,
+            fontFamily: editingBox.fontFamily,
+            fontSize: `${Math.max(10, editingBox.fontSizePx)}px`,
+            lineHeight: `${editingBox.lineHeight}`,
+            resize: "none",
+            transformOrigin: "top left",
+            transform: `rotate(${editingBox.rotation}deg)`,
+            boxShadow: "0 18px 40px rgba(0,0,0,0.45)",
+            zIndex: 50,
+          }}
+        />
       )}
 
       <Stage
@@ -437,16 +617,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         <Layer>
           {/* background */}
           <Rect x={0} y={0} width={containerSize.w} height={containerSize.h} fill="#060A12" />
-
-          {/* subtle grid */}
-          <Rect
-            x={0}
-            y={0}
-            width={containerSize.w}
-            height={containerSize.h}
-            fillPatternRepeat="repeat"
-            opacity={0.18}
-          />
 
           {/* canvas frame */}
           <Rect
@@ -476,7 +646,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   fill={n.fill || "#2B3A67"}
                   cornerRadius={(n.cornerRadius || 0) * frame.scale}
                   rotation={n.rotation || 0}
-                  draggable={!isSpaceDown} // don't drag nodes while panning
+                  draggable={!isSpaceDown && !editingId}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
                   onClick={() => setSelected(n.id)}
@@ -503,11 +673,13 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   fontFamily={n.fontFamily || "Inter, system-ui"}
                   fill={n.fill || "#E9EEF9"}
                   rotation={n.rotation || 0}
-                  draggable={!isSpaceDown}
+                  draggable={!isSpaceDown && !editingId}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
                   onClick={() => setSelected(n.id)}
                   onTap={() => setSelected(n.id)}
+                  onDblClick={() => openTextEditor(n)}
+                  onDblTap={() => openTextEditor(n)}
                   onDragEnd={(e) => {
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
@@ -536,7 +708,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
               "bottom-center",
             ]}
             boundBoxFunc={(oldBox, newBox) => {
-              // prevent too small (screen space)
               if (newBox.width < 20 || newBox.height < 20) return oldBox;
               return newBox;
             }}
