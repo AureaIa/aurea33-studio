@@ -214,6 +214,92 @@ function useIsMobile(breakpoint = 900) {
   return isMobile;
 }
 
+function makeStudioDoc(title = "Doc 1") {
+  const id = makeId();
+  return {
+    id,
+    title,
+    createdAt: uidNow(),
+    updatedAt: uidNow(),
+    // 👇 ESTE ES EL DOC REAL DEL CANVAS
+    doc: {
+      meta: { w: 1080, h: 1080, bg: "#0B1220", zoom: 1, panX: 0, panY: 0 },
+      selectedId: null,
+      nodes: [
+        {
+          id: "n1",
+          type: "rect",
+          x: 140,
+          y: 140,
+          width: 800,
+          height: 360,
+          fill: "#111827",
+          cornerRadius: 28,
+          rotation: 0,
+        },
+        {
+          id: "n2",
+          type: "text",
+          x: 200,
+          y: 240,
+          text: "AUREA STUDIO",
+          fontSize: 72,
+          fontFamily: "Inter, system-ui",
+          fill: "#F7C600",
+          rotation: 0,
+        },
+        {
+          id: "n3",
+          type: "text",
+          x: 200,
+          y: 330,
+          text: "Canvas persistente por proyecto ✅",
+          fontSize: 28,
+          fontFamily: "Inter, system-ui",
+          fill: "#E5E7EB",
+          rotation: 0,
+        },
+      ],
+    },
+  };
+}
+
+function ensureStudioHasActiveDoc(studio) {
+  const s = studio || { meta: { activeDocId: null, lastTemplate: null }, docs: [] };
+  const docs = Array.isArray(s.docs) ? s.docs : [];
+  let activeDocId = s.meta?.activeDocId || null;
+
+  if (!docs.length) {
+    const first = makeStudioDoc("Mi primer canvas");
+    return {
+      meta: { ...(s.meta || {}), activeDocId: first.id },
+      docs: [first],
+    };
+  }
+
+  if (!activeDocId || !docs.some((d) => d.id === activeDocId)) {
+    activeDocId = docs[0].id;
+  }
+
+  return {
+    meta: { ...(s.meta || {}), activeDocId },
+    docs,
+  };
+}
+
+
+useEffect(() => {
+  if (!activeProjectId) return;
+  if (activeTab !== "studio") return;
+
+  const studioRaw = activeProject?.tabs?.studio;
+  const studioSafe = ensureStudioHasActiveDoc(studioRaw);
+
+  if (studioRaw !== studioSafe) {
+    updateProjectTab("studio", studioSafe);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeProjectId, activeTab]);
 
 /* ----------------------------- App Page ----------------------------- */
 
@@ -570,6 +656,17 @@ if (data?.projects?.length) {
       return copy;
     });
   };
+
+// ✅ Guardado normal por TAB (mismo patrón que chat/code/excel)
+// Uso: updateProjectTab("studio", nextStudio)
+const updateProjectTab = (tabKey, nextTabValue) => {
+  updateActiveProject((p) => {
+    const tabs = { ...(p.tabs || {}) };
+    tabs[tabKey] = nextTabValue;
+    return { ...p, tabs };
+  });
+};
+
 
   const pushMsg = (tabKey, msg) => {
     updateActiveProject((p) => {
@@ -1808,6 +1905,8 @@ const MobileSidebarContent = SidebarContent;
               {activeTab === "chat" && "💬 Chat AUREA conectado. Historial por proyecto."}
               {activeTab === "code" && "🧠 Código conectado. Historial por proyecto."}
               {activeTab === "excel" && "📄 Excel Wizard activo (con descarga conectada + spec PRO)."}
+              {activeTab === "studio" && "🎛️ AUREA STUDIO activo. Canvas persistente por proyecto."}
+
             </div>
 
             {/* Body */}
@@ -1920,32 +2019,29 @@ const MobileSidebarContent = SidebarContent;
               )}
 
               {/* STUDIO */}
-                {activeTab === "studio" && (
-  <StudioCanvasClient
-    studio={activeProject?.tabs?.studio}
-    onChange={(nextStudio) => {
-      if (!activeProject) return;
+              {activeTab === "studio" && (() => {
+  const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+  const activeDocEntry = studioSafe.docs.find((d) => d.id === studioSafe.meta.activeDocId);
+  const doc = activeDocEntry?.doc;
 
-      const nextProject = {
-        ...activeProject,
-        tabs: {
-          ...activeProject.tabs,
-          studio: nextStudio,
-        },
-      };
-
-      setActiveProject(nextProject);
-
-      // si guardas en Firestore / backend:
-      // updateDoc(doc(db, "projects", activeProjectId), {
-      //   tabs: nextProject.tabs,
-      // });
-    }}
-    compact={false}
-  />
-)}
-
-
+  return (
+    <StudioCanvasClient
+      doc={doc}
+      compact={compact}
+      onChange={(nextDoc) => {
+        const nextStudio = {
+          ...studioSafe,
+          docs: studioSafe.docs.map((d) =>
+            d.id === studioSafe.meta.activeDocId
+              ? { ...d, updatedAt: uidNow(), doc: nextDoc }
+              : d
+          ),
+        };
+        updateProjectTab("studio", nextStudio);
+      }}
+    />
+  );
+})()}
 
 
               {/* CODE */}
