@@ -9,6 +9,7 @@ import dynamic from "next/dynamic";
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
 import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
+import StudioCanvas from "../components/studio/StudioCanvas";
 
 
 const StudioCanvas = dynamic(
