@@ -401,6 +401,30 @@ useEffect(() => {
   };
 }, [safeIsMobile, sidebarOpen]);
 
+// 7) No Scroll crop por ECSS AUREA33
+
+
+useEffect(() => {
+  const html = document.documentElement;
+  const body = document.body;
+
+  const prevHtmlOverflow = html.style.overflow;
+  const prevBodyOverflow = body.style.overflow;
+  const prevHtmlHeight = html.style.height;
+  const prevBodyHeight = body.style.height;
+
+  html.style.overflow = "hidden";
+  body.style.overflow = "hidden";
+  html.style.height = "100%";
+  body.style.height = "100%";
+
+  return () => {
+    html.style.overflow = prevHtmlOverflow;
+    body.style.overflow = prevBodyOverflow;
+    html.style.height = prevHtmlHeight;
+    body.style.height = prevBodyHeight;
+  };
+}, []);
 
 
   /* ----------------------------- Toasts ----------------------------- */
@@ -2440,15 +2464,18 @@ function CmdBtn({ label, hint, onClick, danger }) {
 
 function page() {
   return {
-    minHeight: "100dvh",
+    height: "100dvh",          // 👈 en vez de minHeight
     background: "var(--bg)",
     color: "var(--text)",
     fontSize: 12,
     lineHeight: 1.35,
     letterSpacing: 0.2,
-    overflow: "hidden",
+    overflow: "hidden",        // 👈 bloquea scroll global
+    display: "flex",           // 👈 CLAVE
+    flexDirection: "column",   // 👈 CLAVE
   };
 }
+
 
 
 function ambientGrid() {
@@ -2545,12 +2572,14 @@ function layout(compact, rightOpen) {
     gap: 14,
     padding: 14,
 
-    width: "100vw",
-    height: "100dvh",
-    overflow: "hidden",
+    width: "100%",
+    flex: 1,            // 👈 CLAVE: ocupa el resto debajo del topbar
+    minHeight: 0,       // 👈 CLAVE: permite que los hijos scrolleen bien
+    overflow: "hidden", // 👈 sin scroll externo
     alignItems: "stretch",
   };
 }
+
 
 
 function sidebar() {
