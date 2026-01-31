@@ -288,19 +288,6 @@ function ensureStudioHasActiveDoc(studio) {
 }
 
 
-useEffect(() => {
-  if (!activeProjectId) return;
-  if (activeTab !== "studio") return;
-
-  const studioRaw = activeProject?.tabs?.studio;
-  const studioSafe = ensureStudioHasActiveDoc(studioRaw);
-
-  if (studioRaw !== studioSafe) {
-    updateProjectTab("studio", studioSafe);
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeProjectId, activeTab]);
-
 /* ----------------------------- App Page ----------------------------- */
 
 export default function AppPage() {
@@ -686,6 +673,29 @@ const updateProjectTab = (tabKey, nextTabValue) => {
       return { ...p, tabs };
     });
   };
+
+  // ✅ Ensure Studio tab has an active doc (solo cuando entras a Studio)
+useEffect(() => {
+  if (!activeProjectId) return;
+  if (activeTab !== "studio") return;
+  if (!activeProject) return;
+
+  const studioRaw = activeProject?.tabs?.studio;
+  const studioSafe = ensureStudioHasActiveDoc(studioRaw);
+
+  // Solo actualiza si realmente cambió (inyecta doc inicial o corrige activeDocId)
+  const changed =
+    JSON.stringify(studioRaw || null) !== JSON.stringify(studioSafe || null);
+
+  if (changed) {
+    updateProjectTab("studio", studioSafe);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeProjectId, activeTab, activeProject]);
+
+
+
+
 
   /* ----------------------------- Pin message ----------------------------- */
   const toggleMessagePin = (tabKey, msgId) => {
