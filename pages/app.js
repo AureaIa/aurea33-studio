@@ -4,18 +4,19 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
-import dynamic from "next/dynamic";
+
 
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
 import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
-import StudioCanvas from "../components/studio/StudioCanvas";
 
+import dynamic from "next/dynamic";
 
-const StudioCanvas = dynamic(
+const StudioCanvasClient = dynamic(
   () => import("../components/studio/StudioCanvas"),
   { ssr: false }
 );
+
 
 const TABS = [
   { key: "chat", title: "Chat AUREA" },
@@ -1920,20 +1921,30 @@ const MobileSidebarContent = SidebarContent;
 
               {/* STUDIO */}
                 {activeTab === "studio" && (
-                  <div style={{ height: "100%", overflow: "hidden" }}>
-                   <StudioCanvas
-                   projectId={activeProjectId}
-                    studio={activeProject?.tabs?.studio || { meta: {}, docs: [] }}
-                    onChange={(nextStudio) => {
-                     updateActiveProject((p) => {
-                       const tabs = { ...(p.tabs || {}) };
-                     tabs.studio = nextStudio;
-                         return { ...p, tabs };
-                       });
-                    }}
-                   />
-                </div>
-               )}
+  <StudioCanvasClient
+    studio={activeProject?.tabs?.studio}
+    onChange={(nextStudio) => {
+      if (!activeProject) return;
+
+      const nextProject = {
+        ...activeProject,
+        tabs: {
+          ...activeProject.tabs,
+          studio: nextStudio,
+        },
+      };
+
+      setActiveProject(nextProject);
+
+      // si guardas en Firestore / backend:
+      // updateDoc(doc(db, "projects", activeProjectId), {
+      //   tabs: nextProject.tabs,
+      // });
+    }}
+    compact={false}
+  />
+)}
+
 
 
 
