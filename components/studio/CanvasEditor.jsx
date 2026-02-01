@@ -40,14 +40,16 @@ function normalizeDoc(input) {
   return {
     ...input,
     meta: {
-      w,
-      h,
-      bg: safeStr(meta.bg, "#0B1220"),
-      zoom: clamp(safeNum(meta.zoom, 1), 0.1, 4),
-      panX: safeNum(meta.panX, 0),
-      panY: safeNum(meta.panY, 0),
-      presetKey: safeStr(meta.presetKey, ""), // StudioCanvas lo usará si existe
-    },
+  ...meta,
+  w,
+  h,
+  bg: safeStr(meta.bg, "#0B1220"),
+  zoom: clamp(safeNum(meta.zoom, 1), 0.1, 4),
+  panX: safeNum(meta.panX, 0),
+  panY: safeNum(meta.panY, 0),
+  presetKey: safeStr(meta.presetKey, ""),
+},
+
     nodes: Array.isArray(input.nodes) ? input.nodes : [],
     selectedId: safeStr(input.selectedId, null),
   };
@@ -110,11 +112,11 @@ export default function CanvasEditor({ studio, onChange, compact = false }) {
 
   // Keep local doc in sync when studio.doc changes from outside
   useEffect(() => {
-    setLocalDoc(normalizeDoc(externalDoc));
-    // resetea stacks cuando cambias de proyecto/doc externo
-    undoRef.current = [];
-    redoRef.current = [];
-  }, [externalDoc]);
+  setLocalDoc(normalizeDoc(externalDoc));
+  undoRef.current = [];
+  redoRef.current = [];
+}, [studio?.id]); // o studio?.docId
+
 
   const hasDoc = !!localDoc;
 

@@ -12,10 +12,11 @@ import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
 
 import dynamic from "next/dynamic";
 
-const StudioCanvasClient = dynamic(
-  () => import("../components/studio/StudioCanvas"),
+const CanvasEditorClient = dynamic(
+  () => import("../components/studio/CanvasEditor"),
   { ssr: false }
 );
+
 
 
 const TABS = [
@@ -286,6 +287,25 @@ function ensureStudioHasActiveDoc(studio) {
     docs,
   };
 }
+
+return (
+  <CanvasEditorClient
+    key={`${activeProjectId}:${studioSafe.meta.activeDocId}`}
+    doc={doc}
+    compact={compact}
+    onChange={(nextDoc) => {
+      const nextStudio = {
+        ...studioSafe,
+        docs: studioSafe.docs.map((d) =>
+          d.id === studioSafe.meta.activeDocId
+            ? { ...d, updatedAt: uidNow(), doc: nextDoc }
+            : d
+        ),
+      };
+      updateProjectTab("studio", nextStudio);
+    }}
+  />
+);
 
 
 /* ----------------------------- App Page ----------------------------- */
