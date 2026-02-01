@@ -288,24 +288,7 @@ function ensureStudioHasActiveDoc(studio) {
   };
 }
 
-return (
-  <CanvasEditorClient
-    key={`${activeProjectId}:${studioSafe.meta.activeDocId}`}
-    doc={doc}
-    compact={compact}
-    onChange={(nextDoc) => {
-      const nextStudio = {
-        ...studioSafe,
-        docs: studioSafe.docs.map((d) =>
-          d.id === studioSafe.meta.activeDocId
-            ? { ...d, updatedAt: uidNow(), doc: nextDoc }
-            : d
-        ),
-      };
-      updateProjectTab("studio", nextStudio);
-    }}
-  />
-);
+
 
 
 /* ----------------------------- App Page ----------------------------- */
@@ -520,6 +503,25 @@ useEffect(() => {
     body.style.height = prevBodyHeight;
   };
 }, []);
+
+return (
+  <CanvasEditorClient
+    key={`${activeProjectId}:${studioSafe.meta.activeDocId}`}
+    doc={doc}
+    compact={compact}
+    onChange={(nextDoc) => {
+      const nextStudio = {
+        ...studioSafe,
+        docs: studioSafe.docs.map((d) =>
+          d.id === studioSafe.meta.activeDocId
+            ? { ...d, updatedAt: uidNow(), doc: nextDoc }
+            : d
+        ),
+      };
+      updateProjectTab("studio", nextStudio);
+    }}
+  />
+);
 
 
   /* ----------------------------- Toasts ----------------------------- */
@@ -2049,14 +2051,15 @@ const MobileSidebarContent = SidebarContent;
               )}
 
               {/* STUDIO */}
-              {activeTab === "studio" && (() => {
+             {activeTab === "studio" && (() => {
   const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
   const activeDocEntry = studioSafe.docs.find((d) => d.id === studioSafe.meta.activeDocId);
-  const doc = activeDocEntry?.doc;
+  const canvasDoc = activeDocEntry?.doc;
 
   return (
-    <StudioCanvasClient
-      doc={doc}
+    <CanvasEditorClient
+      key={`${activeProjectId}:${studioSafe.meta.activeDocId}`}
+      doc={canvasDoc}
       compact={compact}
       onChange={(nextDoc) => {
         const nextStudio = {
@@ -2072,6 +2075,7 @@ const MobileSidebarContent = SidebarContent;
     />
   );
 })()}
+
 
 
               {/* CODE */}
