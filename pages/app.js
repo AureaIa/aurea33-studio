@@ -504,24 +504,6 @@ useEffect(() => {
   };
 }, []);
 
-return (
-  <CanvasEditorClient
-    key={`${activeProjectId}:${studioSafe.meta.activeDocId}`}
-    doc={doc}
-    compact={compact}
-    onChange={(nextDoc) => {
-      const nextStudio = {
-        ...studioSafe,
-        docs: studioSafe.docs.map((d) =>
-          d.id === studioSafe.meta.activeDocId
-            ? { ...d, updatedAt: uidNow(), doc: nextDoc }
-            : d
-        ),
-      };
-      updateProjectTab("studio", nextStudio);
-    }}
-  />
-);
 
 
   /* ----------------------------- Toasts ----------------------------- */
@@ -1857,7 +1839,7 @@ const MobileSidebarContent = SidebarContent;
     flexWrap: "wrap",
   }}
 >
-  {isMobile && (
+ {safeIsMobile && (
     <button
       onClick={() => setSidebarOpen(true)}
       style={btnGhost()}
@@ -3551,4 +3533,8 @@ function toastCard(kind) {
     base.border = "1px solid rgba(255,80,80,0.26)";
   }
   return base;
+}
+
+export async function getServerSideProps() {
+  return { props: {} };
 }
