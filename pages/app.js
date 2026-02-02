@@ -3653,14 +3653,15 @@ function studioPromptFakeInput() {
     flex: 1,
     padding: "10px 12px",
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(0,0,0,0.22)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
     color: "var(--text)",
-    opacity: 0.85,
-    fontWeight: 800,
+    opacity: 0.92,
+    fontWeight: 900,
     overflow: "hidden",
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
+    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.04)",
   };
 }
 
@@ -3668,12 +3669,12 @@ function studioBadge() {
   return {
     padding: "6px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(247,198,0,0.30)",
-    background: "rgba(247,198,0,0.12)",
-    color: "#f7c600",
-    fontWeight: 900,
+    border: "1px solid var(--gold-stroke)",
+    background: "var(--gold-soft)",
+    color: "var(--gold)",
+    fontWeight: 950,
     letterSpacing: 0.4,
-    boxShadow: "0 0 24px rgba(247,198,0,0.10)",
+    boxShadow: "0 0 26px rgba(247,198,0,0.10)",
   };
 }
 
@@ -3681,9 +3682,10 @@ function studioPillSoft() {
   return {
     padding: "6px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
-    fontWeight: 900,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
+    fontWeight: 950,
     opacity: 0.92,
   };
 }
@@ -3692,12 +3694,13 @@ function studioGhostBtn() {
   return {
     padding: "10px 12px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(0,0,0,0.18)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
     color: "var(--text)",
     cursor: "pointer",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
+    boxShadow: "var(--shadow-soft)",
   };
 }
 
@@ -3706,28 +3709,29 @@ function studioPrimaryBtn() {
     padding: "10px 12px",
     borderRadius: 999,
     border: "none",
-    background: "#f7c600",
+    background: "var(--gold)",
     color: "#111",
     cursor: "pointer",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
-    boxShadow: "0 18px 60px rgba(247,198,0,0.12)",
+    boxShadow: "0 18px 60px rgba(247,198,0,0.18)",
   };
 }
 
 function studioRailTitle() {
   return {
-    fontWeight: 900,
+    fontWeight: 950,
     opacity: 0.9,
     marginBottom: 10,
     letterSpacing: 0.2,
+    color: "var(--text)",
   };
 }
 
 function studioRailSep() {
   return {
     height: 1,
-    background: "rgba(255,255,255,0.08)",
+    background: "var(--stroke-soft)",
     margin: "12px 0",
   };
 }
@@ -3744,9 +3748,9 @@ function studioTemplateCard() {
   return {
     padding: 12,
     borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
-    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.03)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-1)",
+    boxShadow: "var(--shadow-soft)",
   };
 }
 
@@ -3754,11 +3758,11 @@ function studioMiniBtn() {
   return {
     padding: "7px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(247,198,0,0.22)",
-    background: "rgba(247,198,0,0.10)",
-    color: "#fff",
+    border: "1px solid var(--gold-stroke)",
+    background: "var(--gold-soft)",
+    color: "var(--text)",
     cursor: "pointer",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
   };
 }
@@ -3767,13 +3771,13 @@ function studioMiniBtnSoft() {
   return {
     padding: "7px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(0,0,0,0.18)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
     cursor: "pointer",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
-    opacity: 0.9,
+    opacity: 0.92,
   };
 }
 
@@ -3783,10 +3787,11 @@ function studioDocBtn(active) {
     textAlign: "left",
     padding: 12,
     borderRadius: 16,
-    border: active ? "1px solid rgba(247,198,0,0.45)" : "1px solid rgba(255,255,255,0.10)",
-    background: active ? "rgba(247,198,0,0.10)" : "rgba(0,0,0,0.16)",
+    border: active ? "1px solid var(--gold-stroke)" : "1px solid var(--stroke-soft)",
+    background: active ? "var(--gold-soft)" : "var(--surface-2)",
     cursor: "pointer",
     color: "var(--text)",
+    boxShadow: active ? "0 10px 40px rgba(247,198,0,0.10)" : "var(--shadow-soft)",
   };
 }
 
@@ -3794,17 +3799,22 @@ function studioTinyTag() {
   return {
     padding: "4px 8px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
     fontSize: 11,
-    fontWeight: 900,
+    fontWeight: 950,
     opacity: 0.85,
   };
 }
 
 function studioDot(kind) {
   const c =
-    kind === "gold" ? "rgba(247,198,0,0.9)" : kind === "blue" ? "rgba(47,107,255,0.9)" : "rgba(255,255,255,0.35)";
+    kind === "gold"
+      ? "rgba(247,198,0,0.9)"
+      : kind === "blue"
+      ? "rgba(47,107,255,0.9)"
+      : "rgba(160,160,160,0.35)";
   return {
     width: 10,
     height: 10,
@@ -3819,33 +3829,38 @@ function studioPropCard() {
   return {
     padding: 12,
     borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-1)",
     marginTop: 10,
+    boxShadow: "var(--shadow-soft)",
   };
 }
 
 function studioPropLabel() {
-  return { fontSize: 11, opacity: 0.7, fontWeight: 900 };
+  return { fontSize: 11, opacity: 0.7, fontWeight: 950, color: "var(--text)" };
 }
 
 function studioPropValue() {
-  return { marginTop: 6, fontWeight: 900, opacity: 0.92 };
+  return { marginTop: 6, fontWeight: 950, opacity: 0.92, color: "var(--text)" };
 }
+
+
+
 /* 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥  FINAL USER INTERFACE AUREA STUDIO — Firefly Shell 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥----------------------------- */
 
 /* ----------------------------- HUD / Inspector Panels ----------------------------- */
 
 function hudPanel() {
   return {
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,255,255,0.06)",
+    background: "var(--surface-1)",
+    border: "1px solid var(--stroke-soft)",
     borderRadius: 16,
     overflow: "hidden",
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
-    backdropFilter: "blur(10px)",
+    backdropFilter: "var(--blur)",
+    boxShadow: "var(--shadow-soft)",
   };
 }
 
@@ -3859,19 +3874,20 @@ function hudHeader() {
     alignItems: "center",
     justifyContent: "space-between",
     padding: 12,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
   };
 }
 
 function hudClose() {
   return {
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(0,0,0,0.25)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
     borderRadius: 10,
     cursor: "pointer",
     padding: "6px 10px",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
   };
 }
@@ -3882,17 +3898,18 @@ function hudCard() {
     marginTop: 0,
     padding: 12,
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(0,0,0,0.22)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.04)",
   };
 }
 
 function hudLabel() {
-  return { fontSize: 11, opacity: 0.7, fontWeight: 900, marginBottom: 6 };
+  return { fontSize: 11, opacity: 0.7, fontWeight: 950, marginBottom: 6, color: "var(--text)" };
 }
 
 function hudText() {
-  return { fontSize: 12, opacity: 0.92, marginBottom: 4 };
+  return { fontSize: 12, opacity: 0.92, marginBottom: 4, color: "var(--text)" };
 }
 
 function hudBtn() {
@@ -3900,11 +3917,11 @@ function hudBtn() {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(247,198,0,0.18)",
-    background: "rgba(247,198,0,0.08)",
-    color: "#fff",
+    border: "1px solid var(--gold-stroke)",
+    background: "var(--gold-soft)",
+    color: "var(--text)",
     cursor: "pointer",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
     marginTop: 8,
   };
@@ -3915,11 +3932,11 @@ function hudBtnSoft() {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
     cursor: "pointer",
-    fontWeight: 900,
+    fontWeight: 950,
     fontSize: 12,
     marginTop: 8,
   };
@@ -3932,8 +3949,10 @@ function inspectorPre() {
     opacity: 0.9,
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
+    color: "var(--text)",
   };
 }
+
 
 /* ----------------------------- Excel UI helpers ----------------------------- */
 
@@ -3944,8 +3963,8 @@ function excelTopRow() {
     alignItems: "center",
     padding: "8px 10px",
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(255,255,255,0.02)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
     marginBottom: 10,
   };
 }
@@ -3967,10 +3986,11 @@ function excelHint() {
     marginTop: 10,
     padding: "10px 12px",
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(0,0,0,0.22)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
     fontSize: 12,
-    opacity: 0.9,
+    opacity: 0.92,
+    color: "var(--text)",
   };
 }
 
@@ -3981,8 +4001,8 @@ function modalOverlay() {
     position: "fixed",
     inset: 0,
     zIndex: 80,
-    background: "rgba(0,0,0,0.55)",
-    backdropFilter: "blur(6px)",
+    background: "rgba(2,6,23,0.55)",
+    backdropFilter: "blur(8px)",
     display: "grid",
     placeItems: "center",
     padding: 18,
@@ -3993,9 +4013,9 @@ function modalCard() {
   return {
     width: "min(860px, 100%)",
     borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(10,10,12,0.92)",
-    boxShadow: "0 30px 120px rgba(0,0,0,0.65)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--panel)",
+    boxShadow: "var(--shadow-hard)",
     overflow: "hidden",
   };
 }
@@ -4003,15 +4023,16 @@ function modalCard() {
 function modalHeader() {
   return {
     padding: 12,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid var(--stroke-soft)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
+    background: "var(--surface-2)",
   };
 }
 
 function modalBody() {
-  return { padding: 12 };
+  return { padding: 12, background: "var(--panel)" };
 }
 
 function modalInput() {
@@ -4019,11 +4040,12 @@ function modalInput() {
     flex: 1,
     padding: "12px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(0,0,0,0.30)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
     outline: "none",
-    fontWeight: 800,
+    fontWeight: 900,
+    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.04)",
   };
 }
 
@@ -4031,12 +4053,13 @@ function searchItem() {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.03)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-1)",
+    color: "var(--text)",
     cursor: "pointer",
     textAlign: "left",
-    fontWeight: 900,
+    fontWeight: 950,
+    boxShadow: "var(--shadow-soft)",
   };
 }
 
@@ -4044,9 +4067,9 @@ function searchMsgItem() {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(0,0,0,0.25)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
     cursor: "pointer",
     textAlign: "left",
   };
@@ -4060,9 +4083,9 @@ function cmdBtn(danger) {
   return {
     padding: 12,
     borderRadius: 14,
-    border: danger ? "1px solid rgba(255,80,80,0.25)" : "1px solid rgba(255,255,255,0.10)",
-    background: danger ? "rgba(255,80,80,0.10)" : "rgba(255,255,255,0.04)",
-    color: "#fff",
+    border: danger ? "1px solid rgba(239,68,68,0.28)" : "1px solid var(--stroke-soft)",
+    background: danger ? "var(--red-soft)" : "var(--surface-2)",
+    color: "var(--text)",
     cursor: "pointer",
     textAlign: "left",
   };
@@ -4087,21 +4110,18 @@ function toastCard(kind) {
   const base = {
     padding: 12,
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(10,10,12,0.92)",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.55)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--panel)",
+    boxShadow: "var(--shadow-hard)",
   };
-  if (kind === "ok") {
-    base.border = "1px solid rgba(60,220,130,0.22)";
-  }
-  if (kind === "warn") {
-    base.border = "1px solid rgba(247,198,0,0.22)";
-  }
-  if (kind === "error") {
-    base.border = "1px solid rgba(255,80,80,0.26)";
-  }
+
+  if (kind === "ok") base.border = "1px solid rgba(16,185,129,0.30)";
+  if (kind === "warn") base.border = "1px solid var(--gold-stroke)";
+  if (kind === "error") base.border = "1px solid rgba(239,68,68,0.32)";
+
   return base;
 }
+
 
 export async function getServerSideProps() {
   return { props: {} };
