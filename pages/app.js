@@ -379,22 +379,50 @@ const themeVars = useMemo(() => {
       "--gold": "#f7c600",
       "--shadow": "0 18px 60px rgba(0,0,0,0.55)",
       "--blur": "blur(10px)",
+
+      /* ✅ NUEVO: superficies consistentes */
+      "--surface1": "rgba(255,255,255,0.03)",  // cards
+      "--surface2": "rgba(0,0,0,0.28)",        // inner panels
+      "--surface3": "rgba(255,255,255,0.02)",  // subtle
+
+      /* ✅ NUEVO: acentos */
+      "--blue": "rgba(47,107,255,0.92)",
+      "--blueSoft": "rgba(47,107,255,0.18)",
+      "--ok": "rgba(60,220,130,0.18)",
+      "--danger": "rgba(255,80,80,0.16)",
+
+      /* ✅ NUEVO: texto invertido */
+      "--onGold": "#111111",
     };
   }
 
-  // 🌤 Light premium (blanco / gris)
+  // 🌤 Light premium real
   return {
     "--bg": "#F4F5F7",
     "--panel": "#FFFFFF",
-    "--panel2": "#FFFFFF",
+    "--panel2": "rgba(255,255,255,0.86)",
     "--border": "rgba(15,23,42,0.10)",
     "--text": "#0F172A",
     "--muted": "rgba(15,23,42,0.65)",
     "--gold": "#C9A227",
     "--shadow": "0 18px 60px rgba(2,6,23,0.10)",
     "--blur": "blur(10px)",
+
+    /* ✅ NUEVO: superficies */
+    "--surface1": "#FFFFFF",
+    "--surface2": "rgba(255,255,255,0.86)",
+    "--surface3": "rgba(15,23,42,0.03)",
+
+    /* ✅ NUEVO: acentos */
+    "--blue": "rgba(37,99,235,0.96)",
+    "--blueSoft": "rgba(37,99,235,0.12)",
+    "--ok": "rgba(16,185,129,0.14)",
+    "--danger": "rgba(239,68,68,0.12)",
+
+    "--onGold": "#0F172A",
   };
 }, [theme]);
+
 
 // 6) Base styles helpers (opcional pero recomendado)
 const uiBase = useMemo(
@@ -1784,6 +1812,45 @@ const MobileSidebarContent = SidebarContent;
         <title>AUREA 33 Studio</title>
       </Head>
 
+<style jsx global>{`
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ✅ animación que ya estás usando en typingDots() */
+  @keyframes aureaPulse {
+    0% { transform: translateY(0); opacity: 0.5; }
+    50% { transform: translateY(-1px); opacity: 1; }
+    100% { transform: translateY(0); opacity: 0.55; }
+  }
+
+  /* ✅ scrollbars premium */
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(247,198,0,0.18);
+    border: 1px solid rgba(247,198,0,0.22);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(247,198,0,0.28);
+  }
+
+  /* ✅ selección */
+  ::selection {
+    background: rgba(247,198,0,0.22);
+    color: var(--text);
+  }
+
+  /* ✅ focus ring (accesibilidad y pro feel) */
+  button:focus-visible, input:focus-visible {
+    outline: 2px solid rgba(247,198,0,0.55);
+    outline-offset: 2px;
+  }
+`}</style>
+
+
       <div style={{ ...page(compact), ...themeVars }}>
         <div style={ambientGrid()} />
         <div style={ambientGlow()} />
@@ -2937,7 +3004,7 @@ function metricCard(variant) {
     padding: 10,
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(0,0,0,0.28)",
+background: "var(--surface2)",
   };
   if (variant === "ok") {
     base.border = "1px solid rgba(60,220,130,0.28)";
@@ -3220,7 +3287,7 @@ function chatArea(compact) {
     padding: 8,
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(0,0,0,0.28)",
+    background: "var(--surface2)",
     boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.03)",
   };
 }
@@ -3272,8 +3339,8 @@ function quickBtn() {
     padding: "8px 10px",
     borderRadius: 999,
     border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(0,0,0,0.20)",
-    color: "#fff",
+background: "var(--surface3)",
+color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
@@ -3313,9 +3380,9 @@ function bubble(isUser, compact) {
     maxWidth: 980,
     padding: compact ? 10 : 12,
     borderRadius: 14,
-    background: isUser ? "rgba(47,107,255,0.88)" : "rgba(255,255,255,0.04)",
+background: isUser ? "var(--blue)" : "var(--surface3)",
     border: "1px solid rgba(255,255,255,0.08)",
-    boxShadow: isUser ? "0 0 26px rgba(47,107,255,0.18)" : "0 0 22px rgba(247,198,0,0.05)",
+boxShadow: isUser ? "0 0 26px rgba(37,99,235,0.16)" : "0 0 22px rgba(247,198,0,0.05)",
     fontSize: 12,
   };
 }
@@ -3378,7 +3445,7 @@ function btnPrimary() {
     borderRadius: 12,
     border: "none",
     background: "#f7c600",
-    color: "#111",
+color: "var(--onGold)",
     fontWeight: 900,
     cursor: "pointer",
     fontSize: 12,
