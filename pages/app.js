@@ -380,48 +380,48 @@ const themeVars = useMemo(() => {
       "--shadow": "0 18px 60px rgba(0,0,0,0.55)",
       "--blur": "blur(10px)",
 
-      /* ✅ NUEVO: superficies consistentes */
-      "--surface1": "rgba(255,255,255,0.03)",  // cards
-      "--surface2": "rgba(0,0,0,0.28)",        // inner panels
-      "--surface3": "rgba(255,255,255,0.02)",  // subtle
-
-      /* ✅ NUEVO: acentos */
+      // ✅ NUEVO: surfaces unificados
+      "--surface-1": "rgba(255,255,255,0.04)",  // cards suaves
+      "--surface-2": "rgba(0,0,0,0.22)",        // áreas internas
+      "--surface-3": "rgba(0,0,0,0.35)",        // fondos densos
+      "--stroke-soft": "rgba(255,255,255,0.10)",
+      "--stroke-hard": "rgba(255,255,255,0.16)",
+      "--shadow-soft": "0 10px 30px rgba(0,0,0,0.35)",
+      "--shadow-hard": "0 24px 90px rgba(0,0,0,0.55)",
       "--blue": "rgba(47,107,255,0.92)",
-      "--blueSoft": "rgba(47,107,255,0.18)",
-      "--ok": "rgba(60,220,130,0.18)",
-      "--danger": "rgba(255,80,80,0.16)",
-
-      /* ✅ NUEVO: texto invertido */
-      "--onGold": "#111111",
+      "--blue-soft": "rgba(47,107,255,0.14)",
+      "--green-soft": "rgba(60,220,130,0.12)",
+      "--red-soft": "rgba(255,80,80,0.12)",
     };
   }
 
-  // 🌤 Light premium real
+  // 🌤 Light premium real (sin manchas negras)
   return {
     "--bg": "#F4F5F7",
     "--panel": "#FFFFFF",
-    "--panel2": "rgba(255,255,255,0.86)",
-    "--border": "rgba(15,23,42,0.10)",
+    "--panel2": "rgba(255,255,255,0.72)",
+    "--border": "rgba(15,23,42,0.12)",
     "--text": "#0F172A",
     "--muted": "rgba(15,23,42,0.65)",
     "--gold": "#C9A227",
     "--shadow": "0 18px 60px rgba(2,6,23,0.10)",
     "--blur": "blur(10px)",
 
-    /* ✅ NUEVO: superficies */
-    "--surface1": "#FFFFFF",
-    "--surface2": "rgba(255,255,255,0.86)",
-    "--surface3": "rgba(15,23,42,0.03)",
-
-    /* ✅ NUEVO: acentos */
-    "--blue": "rgba(37,99,235,0.96)",
-    "--blueSoft": "rgba(37,99,235,0.12)",
-    "--ok": "rgba(16,185,129,0.14)",
-    "--danger": "rgba(239,68,68,0.12)",
-
-    "--onGold": "#0F172A",
+    // ✅ NUEVO: surfaces unificados para light
+    "--surface-1": "#FFFFFF",
+    "--surface-2": "rgba(15,23,42,0.03)",
+    "--surface-3": "rgba(15,23,42,0.06)",
+    "--stroke-soft": "rgba(15,23,42,0.10)",
+    "--stroke-hard": "rgba(15,23,42,0.14)",
+    "--shadow-soft": "0 10px 30px rgba(2,6,23,0.08)",
+    "--shadow-hard": "0 24px 90px rgba(2,6,23,0.12)",
+    "--blue": "rgba(47,107,255,0.88)",
+    "--blue-soft": "rgba(47,107,255,0.10)",
+    "--green-soft": "rgba(16,185,129,0.10)",
+    "--red-soft": "rgba(239,68,68,0.10)",
   };
 }, [theme]);
+
 
 
 // 6) Base styles helpers (opcional pero recomendado)
@@ -1813,40 +1813,33 @@ const MobileSidebarContent = SidebarContent;
       </Head>
 
 <style jsx global>{`
-  html, body {
-    background: var(--bg);
-    color: var(--text);
-  }
+  html, body { margin: 0; padding: 0; }
+  * { box-sizing: border-box; }
 
-  /* ✅ animación que ya estás usando en typingDots() */
+  /* ✅ typingDots animation */
   @keyframes aureaPulse {
-    0% { transform: translateY(0); opacity: 0.5; }
-    50% { transform: translateY(-1px); opacity: 1; }
-    100% { transform: translateY(0); opacity: 0.55; }
+    0% { transform: translateX(0); opacity: .35; filter: blur(0px); }
+    50% { transform: translateX(8px); opacity: 1; filter: blur(.2px); }
+    100% { transform: translateX(0); opacity: .35; filter: blur(0px); }
   }
 
-  /* ✅ scrollbars premium */
-  *::-webkit-scrollbar { width: 10px; height: 10px; }
-  *::-webkit-scrollbar-track { background: transparent; }
-  *::-webkit-scrollbar-thumb {
+  /* ✅ scrollbars pro */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
     background: rgba(247,198,0,0.18);
-    border: 1px solid rgba(247,198,0,0.22);
+    border: 2px solid transparent;
+    background-clip: padding-box;
     border-radius: 999px;
   }
-  *::-webkit-scrollbar-thumb:hover {
-    background: rgba(247,198,0,0.28);
-  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(247,198,0,0.30); }
 
-  /* ✅ selección */
-  ::selection {
-    background: rgba(247,198,0,0.22);
-    color: var(--text);
-  }
+  /* ✅ text selection */
+  ::selection { background: rgba(247,198,0,0.22); }
 
-  /* ✅ focus ring (accesibilidad y pro feel) */
-  button:focus-visible, input:focus-visible {
-    outline: 2px solid rgba(247,198,0,0.55);
-    outline-offset: 2px;
+  /* ✅ reduce motion */
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   }
 `}</style>
 
@@ -2893,8 +2886,10 @@ function topbar() {
     background: "var(--panel2)",
     backdropFilter: "var(--blur)",
     zIndex: 30,
+    boxShadow: "0 10px 26px rgba(0,0,0,0.06)",
   };
 }
+
 
 
 function chip() {
@@ -3286,11 +3281,12 @@ function chatArea(compact) {
     gap: compact ? 10 : 12,
     padding: 8,
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.06)",
-    background: "var(--surface2)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
     boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.03)",
   };
 }
+
 
 function pinsWrap() {
   return {
@@ -3329,8 +3325,8 @@ function quickRow() {
     alignItems: "center",
     padding: "8px 8px",
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(255,255,255,0.02)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
   };
 }
 
@@ -3338,14 +3334,15 @@ function quickBtn() {
   return {
     padding: "8px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-background: "var(--surface3)",
-color: "var(--text)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
   };
 }
+
 
 function inputRow() {
   return { display: "flex", gap: 10, marginTop: 2 };
@@ -3380,12 +3377,14 @@ function bubble(isUser, compact) {
     maxWidth: 980,
     padding: compact ? 10 : 12,
     borderRadius: 14,
-background: isUser ? "var(--blue)" : "var(--surface3)",
-    border: "1px solid rgba(255,255,255,0.08)",
-boxShadow: isUser ? "0 0 26px rgba(37,99,235,0.16)" : "0 0 22px rgba(247,198,0,0.05)",
+    background: isUser ? "var(--blue)" : "var(--surface-1)",
+    border: "1px solid var(--stroke-soft)",
+    boxShadow: isUser ? "0 0 26px rgba(47,107,255,0.18)" : "var(--shadow-soft)",
     fontSize: 12,
+    color: isUser ? "#fff" : "var(--text)",
   };
 }
+
 
 function typingDots() {
   return {
