@@ -1523,6 +1523,85 @@ const resetExcelMeta = () => {
     toast("Quick Action", `${kind} (${tabKey})`, "ok");
   };
 
+
+/* ----------------------------- Inline Presets (Paso 3.5) ----------------------------- */
+
+const INLINE_PRESETS = {
+  images: [
+    { label: "IG Post 1080", text: "Post de Instagram 1080x1080, estilo premium, fondo oscuro, tipografía grande, composición moderna, espacio para logo." },
+    { label: "Story 9:16", text: "Historia Instagram 1080x1920 (9:16), diseño vertical, título arriba, CTA abajo, estilo Aurea33 dark/gold, alto contraste." },
+    { label: "FB Cover", text: "Portada de Facebook 820x312, diseño horizontal, headline grande, elementos visuales equilibrados, estilo futurista." },
+    { label: "Producto", text: "Mockup de producto con fondo minimal, iluminación suave, texto corto de beneficio, estilo comercial premium." },
+  ],
+  chat: [
+    { label: "Mejorar texto", text: "Mejora mi texto para que sea más claro, persuasivo y ordenado:\n" },
+    { label: "Versión corta", text: "Reescribe esto en versión corta y poderosa:\n" },
+    { label: "Versión emocional", text: "Reescribe esto con tono emocional, humano y empático:\n" },
+    { label: "Bullet points", text: "Convierte esto en bullets claros y accionables:\n" },
+  ],
+  code: [
+    { label: "Fix bug", text: "Encuentra el bug y dame el fix exacto con explicación breve:\n" },
+    { label: "Refactor PRO", text: "Refactoriza este código a nivel PRO (limpio, escalable, sin romper nada):\n" },
+    { label: "Optimizar", text: "Optimiza rendimiento y estructura sin cambiar funcionalidad:\n" },
+    { label: "TypeScript", text: "Pásalo a TypeScript y agrega types correctos:\n" },
+  ],
+};
+
+const applyInlinePreset = (tabKey, presetText) => {
+  if (busy) return;
+
+  if (tabKey === "images") {
+    setImgPrompt((prev) => (prev?.trim() ? `${prev}\n\n${presetText}` : presetText));
+    toast("Preset", "Aplicado a Images", "ok");
+    return;
+  }
+  if (tabKey === "chat") {
+    const last = (activeProject?.tabs?.chat?.messages || []).slice(-1)[0]?.text || "";
+    setChatInput((prev) => {
+      const base = presetText;
+      // si el preset termina con \n (como “Mejora esto:\n”) y no hay nada, sugiere last
+      if (base.endsWith("\n") && !prev?.trim() && last) return `${base}${last}`;
+      return prev?.trim() ? `${prev}\n\n${base}` : base;
+    });
+    toast("Preset", "Aplicado a Chat", "ok");
+    return;
+  }
+  if (tabKey === "code") {
+    const last = (activeProject?.tabs?.code?.messages || []).slice(-1)[0]?.text || "";
+    setCodeInput((prev) => {
+      const base = presetText;
+      if (base.endsWith("\n") && !prev?.trim() && last) return `${base}${last}`;
+      return prev?.trim() ? `${prev}\n\n${base}` : base;
+    });
+    toast("Preset", "Aplicado a Code", "ok");
+    return;
+  }
+};
+
+const InlineChips = ({ tabKey }) => {
+  const items = INLINE_PRESETS?.[tabKey] || [];
+  if (!items.length) return null;
+
+  return (
+    <div style={inlineChipsRow()}>
+      {items.map((x) => (
+        <button
+          key={x.label}
+          style={inlineChipBtn()}
+          onClick={() => applyInlinePreset(tabKey, x.text)}
+          disabled={busy}
+          title={x.text}
+        >
+          {x.label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+
+
+
   /* ----------------------------- Global click close menus ----------------------------- */
   useEffect(() => {
     const onDoc = () => setOpenMenuId(null);
@@ -2023,13 +2102,14 @@ const MobileSidebarContent = SidebarContent;
                   </div>
 
                   <QuickActions
-                    onSummary={() => quickForTab("images", "summary")}
-                    onImprove={() => quickForTab("images", "improve")}
-                    onContinue={() => quickForTab("images", "continue")}
-                    onExportTxt={() => exportConversationTxt("images")}
-                    onExportPdf={() => exportConversationPdf("images")}
-                  />
-
+  onSummary={() => quickForTab("images", "summary")}
+  onImprove={() => quickForTab("images", "improve")}
+  onContinue={() => quickForTab("images", "continue")}
+  onExportTxt={() => exportConversationTxt("images")}
+  onExportPdf={() => exportConversationPdf("images")}
+/>
+{/* ✅ Paso 3.5: Chips inline */}
+<InlineChips tabKey="images" />
                   <div style={inputRow()}>
                     <input
                       value={imgPrompt}
@@ -2073,7 +2153,8 @@ const MobileSidebarContent = SidebarContent;
                     onExportTxt={() => exportConversationTxt("chat")}
                     onExportPdf={() => exportConversationPdf("chat")}
                   />
-
+{/* ✅ Paso 3.5: Chips inline */}
+<InlineChips tabKey="chat" />
                   <div style={inputRow()}>
                     <input
                       value={chatInput}
@@ -2331,7 +2412,8 @@ const MobileSidebarContent = SidebarContent;
                     onExportTxt={() => exportConversationTxt("code")}
                     onExportPdf={() => exportConversationPdf("code")}
                   />
-
+{/* ✅ Paso 3.5: Chips inline */}
+<InlineChips tabKey="code" />
                   <div style={inputRow()}>
                     <input
                       value={codeInput}
@@ -2831,6 +2913,31 @@ function CmdBtn({ label, hint, onClick, danger }) {
 
 /* ----------------------------- Styles (inline) ----------------------------- */
 /* (Todo igual que tu archivo; NO toqué nada fuera del bloque EXCEL) */
+
+function inlineChipsRow() {
+  return {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    padding: "8px 2px 2px",
+    marginTop: 6,
+  };
+}
+
+function inlineChipBtn() {
+  return {
+    padding: "7px 10px",
+    borderRadius: 999,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 12,
+    opacity: 0.95,
+  };
+}
+
 
 function page() {
   return {
