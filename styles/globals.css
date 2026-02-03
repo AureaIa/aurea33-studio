@@ -15,7 +15,7 @@ body {
 }
 
 /* Botones personalizados */
-button {
+.btn {
   border-radius: 9999px;
   padding: 0.5rem 1.25rem;
   font-weight: 600;
@@ -83,3 +83,98 @@ button {
 .text-glow {
   text-shadow: 0 0 10px #facc15, 0 0 20px #facc15;
 }
+
+/* =========================
+   AUREA33 Studio — Interactions Pro
+   ========================= */
+
+:root {
+  --ease-out: cubic-bezier(.2,.8,.2,1);
+  --ease-snap: cubic-bezier(.2,1.1,.2,1);
+  --ring: 0 0 0 3px rgba(247,198,0,0.20);
+  --glow-gold: 0 18px 80px rgba(247,198,0,0.18);
+  --glow-soft: 0 16px 60px rgba(0,0,0,0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+.ui-btn, .ui-card, .ui-input, .ui-tab {
+  transition: transform 140ms var(--ease-out),
+              box-shadow 180ms var(--ease-out),
+              background 180ms var(--ease-out),
+              border-color 180ms var(--ease-out),
+              opacity 180ms var(--ease-out),
+              filter 180ms var(--ease-out);
+  will-change: transform, box-shadow;
+}
+
+.ui-btn {
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ui-btn:hover { transform: translateY(-1px); }
+.ui-btn:active { transform: translateY(0px) scale(0.99); }
+
+.ui-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.ui-btn[data-variant="gold"]:hover {
+  filter: brightness(1.03);
+  box-shadow: var(--glow-gold);
+}
+
+.ui-btn[data-variant="ghost"]:hover {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(247,198,0,0.20) !important;
+  box-shadow: var(--glow-soft);
+}
+
+.ui-input:focus-within,
+.ui-input:focus-visible {
+  outline: none;
+  border-color: rgba(247,198,0,0.30) !important;
+  box-shadow: var(--ring);
+}
+
+.ui-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(247,198,0,0.16);
+  box-shadow: 0 18px 70px rgba(0,0,0,0.28);
+}
+
+.ui-tab { position: relative; }
+
+.ui-tab:hover {
+  transform: translateY(-1px);
+  border-color: rgba(247,198,0,0.18);
+}
+
+.ui-tab[data-active="true"] {
+  border-color: rgba(247,198,0,0.35) !important;
+  box-shadow: 0 18px 80px rgba(247,198,0,0.10);
+}
+
+.ui-tab[data-active="true"]::after{
+  content:"";
+  position:absolute;
+  left:14px; right:14px; bottom:-1px;
+  height:2px;
+  border-radius:999px;
+  background: rgba(247,198,0,0.70);
+  opacity: .85;
+}
+
+/* Scrollbar subtle */
+*::-webkit-scrollbar { height: 10px; width: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(250,204,21,0.18);
+  border: 2px solid rgba(0,0,0,0);
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
