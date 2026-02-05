@@ -325,17 +325,6 @@ function ensureStudioHasActiveDoc(studio) {
 
 /* ----------------------------- Auth Token (FIX definitivo) ----------------------------- */
 
-// Token helper (seguro)
-const getAuthToken = async (forceRefresh = false) => {
-  const u = auth.currentUser;
-  if (!u) return null;
-  try {
-    return await u.getIdToken(!!forceRefresh);
-  } catch (e) {
-    console.warn("getAuthToken error:", e);
-    return null;
-  }
-};
 
 // ✅ Backward-compat: tu código usa getIdTokenForce() en muchos lados
 const getIdTokenForce = async () => {
