@@ -353,6 +353,32 @@ const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
 const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
 
+// ✅ Mobile Drawer (solo móvil)
+const [sidebarOpen, setSidebarOpen] = useState(false);
+
+useEffect(() => {
+  if (!safeIsMobile) {
+    setSidebarOpen(false);
+    document.body.style.overflow = "";
+    return;
+  }
+
+  const onKey = (e) => {
+    if (e.key === "Escape") setSidebarOpen(false);
+  };
+  window.addEventListener("keydown", onKey);
+
+  const prevOverflow = document.body.style.overflow;
+  if (sidebarOpen) document.body.style.overflow = "hidden";
+
+  return () => {
+    window.removeEventListener("keydown", onKey);
+    document.body.style.overflow = prevOverflow;
+  };
+}, [safeIsMobile, sidebarOpen]);
+
+
+
 // -----------------------------
 // Theme (light / dark) ✅ FULL
 // -----------------------------
@@ -532,7 +558,7 @@ useEffect(() => setHydrated(true), []);
 
 const safeIsMobile = hydrated ? isMobile : false;
 
-const [sidebarOpen, setSidebarOpen] = useState(false);
+
 
 
 useEffect(() => {
@@ -2099,7 +2125,7 @@ const MobileSidebarContent = SidebarContent;
 `}</style>
 
 
-      <div style={{ ...page(compact), ...themeVars }}>
+      <div style={{ ...page(), ...themeVars }}>
         <div style={ambientGrid()} />
         <div style={ambientGlow()} />
 
@@ -3282,7 +3308,7 @@ function metricCard(variant) {
     padding: 10,
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.08)",
-background: "var(--surface2)",
+background: "var(--surface-2)",
   };
   if (variant === "ok") {
     base.border = "1px solid rgba(60,220,130,0.28)";
@@ -3727,7 +3753,7 @@ function btnPrimary() {
     borderRadius: 12,
     border: "none",
     background: "#f7c600",
-color: "var(--onGold)",
+color: "#111",
     fontWeight: 900,
     cursor: "pointer",
     fontSize: 12,
