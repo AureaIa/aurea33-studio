@@ -33,6 +33,31 @@ function lsKey(uid) {
   return `aurea33:v2.1.4:${uid}:projects`;
 }
 
+function lsKeyActiveTab(uid) {
+  return `aurea33:v2:activeTab:${uid || "anon"}`;
+}
+function lsKeySidebar(uid) {
+  return `aurea33:v2:sidebarCollapsed:${uid || "anon"}`;
+}
+
+function safeGetLS(key, fallback) {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeSetLS(key, value) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+
 function safeJsonParse(str, fallback) {
   try {
     return JSON.parse(str);
@@ -301,7 +326,10 @@ export default function AppPage() {
   const [authReady, setAuthReady] = useState(false);
 
   // UI
-  const [activeTab, setActiveTab] = useState("images");
+
+const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
+const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
 
 // -----------------------------
 // Theme (light / dark) ✅ FULL
@@ -568,6 +596,22 @@ useEffect(() => {
     await signOut(auth);
     router.push("/login");
   };
+
+// dentro del onAuthStateChanged(auth, (u) => { ... })
+if (u) {
+  // 1) Tab persistente
+  const savedTab = safeGetLS(lsKeyActiveTab(u.uid), null);
+
+  // valida que exista en TABS
+  const allowed = new Set((TABS || []).map(t => t.key));
+  const nextTab = savedTab && allowed.has(savedTab) ? savedTab : (TABS?.[0]?.key || "chat");
+  setActiveTab(nextTab);
+
+  // 2) Sidebar collapsed persistente
+  const savedCollapsed = safeGetLS(lsKeySidebar(u.uid), null);
+  if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "1");
+}
+
 
   /* ----------------------------- Projects load/save ----------------------------- */
   useEffect(() => {
@@ -1678,6 +1722,20 @@ const InlineChips = ({ tabKey }) => {
     toast("Jump", `${r.projectTitle} → ${r.tab}`, "ok");
   };
 
+  const setTab = (key) => {
+  setActiveTab(key);
+  if (user?.uid) safeSetLS(lsKeyActiveTab(user.uid), key);
+};
+
+
+const toggleSidebar = () => {
+  setSidebarCollapsed(prev => {
+    const next = !prev;
+    if (user?.uid) safeSetLS(lsKeySidebar(user.uid), next ? "1" : "0");
+    return next;
+  });
+};
+
   /* ----------------------------- loader seguro ----------------------------- */
   if (!authReady) {
     return (
@@ -1716,6 +1774,8 @@ const SidebarContent = () => (
         + Nuevo
       </button>
     </div>
+
+const sidebarW = sidebarCollapsed ? "w-[72px]" : "w-[280px]";
 
     {/* Live Metrics */}
     <div style={metricsWrap()}>
