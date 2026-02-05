@@ -319,6 +319,12 @@ function ensureStudioHasActiveDoc(studio) {
 
 
 /* ----------------------------- App Page ----------------------------- */
+const getAuthToken = async () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No authenticated user");
+  return await user.getIdToken(true);
+};
+
 
 export default function AppPage() {
   const router = useRouter();
