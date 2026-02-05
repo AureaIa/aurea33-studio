@@ -6,6 +6,9 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
 
 
+import { getAuthToken } from "../lib/getAuthToken";
+
+
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
 import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
@@ -319,10 +322,32 @@ function ensureStudioHasActiveDoc(studio) {
 
 
 /* ----------------------------- App Page ----------------------------- */
-const getAuthToken = async () => {
-  const user = auth.currentUser;
-  if (!user) throw new Error("No authenticated user");
-  return await user.getIdToken(true);
+
+/* ----------------------------- Auth Token (FIX definitivo) ----------------------------- */
+
+// Token helper (seguro)
+const getAuthToken = async (forceRefresh = false) => {
+  const u = auth.currentUser;
+  if (!u) return null;
+  try {
+    return await u.getIdToken(!!forceRefresh);
+  } catch (e) {
+    console.warn("getAuthToken error:", e);
+    return null;
+  }
+};
+
+// ✅ Backward-compat: tu código usa getIdTokenForce() en muchos lados
+const getIdTokenForce = async () => {
+  const token = await getAuthToken(true);
+  if (!token) throw new Error("No authenticated user token");
+  return token;
+};
+
+// Helper para headers
+const authHeaders = async (forceRefresh = false) => {
+  const token = await getAuthToken(forceRefresh);
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
 
@@ -919,68 +944,62 @@ const headerUser = useMemo(() => {
      ======================================================================================= */
 
   async function createImageJob({ prompt, n = 1, size = "1024x1024" }) {
-    const token = await getIdTokenForce();
+  const r = await fetch("/api/images/create-job", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders(true)),
+    },
+    body: JSON.stringify({ prompt, n, size }),
+  });
 
-    const r = await fetch("/api/images/create-job", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ prompt, n, size }),
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "create-job failed");
+
+  const jobId =
+    data?.jobId ??
+    data?.id ??
+    data?.job?.id ??
+    data?.job?.jobId ??
+    data?.data?.jobId ??
+    null;
+
+  return { jobId, raw: data };
+}
+
+async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
+  const start = Date.now();
+  let lastStatus = "";
+
+  while (Date.now() - start < maxMs) {
+    if (signal?.aborted) throw new Error("Aborted");
+
+    const url = `/api/images/get-job?jobId=${encodeURIComponent(jobId)}`;
+
+    const r = await fetch(url, {
+      method: "GET",
+      headers: { ...(await authHeaders(false)) },
+      signal,
     });
 
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data?.error || "create-job failed");
+    if (!r.ok) throw new Error(data?.error || `get-job failed (${r.status})`);
 
-    const jobId =
-      data?.jobId ??
-      data?.id ??
-      data?.job?.id ??
-      data?.job?.jobId ??
-      data?.data?.jobId ??
-      null;
+    const status = data?.status || data?.state || data?.job?.status || "";
+    const imageUrl = data?.imageUrl || data?.url || data?.output?.[0]?.url || data?.job?.imageUrl;
 
-    return { jobId, raw: data };
-  }
-
-  async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
-    const start = Date.now();
-    let lastStatus = "";
-
-    while (Date.now() - start < maxMs) {
-      if (signal?.aborted) throw new Error("Aborted");
-
-      const token = await getIdTokenForce();
-      const url = `/api/images/get-job?jobId=${encodeURIComponent(jobId)}`;
-
-      const r = await fetch(url, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        signal,
-      });
-
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const e = data?.error || `get-job failed (${r.status})`;
-        throw new Error(e);
-      }
-
-      const status = data?.status || data?.state || data?.job?.status || "";
-      const imageUrl = data?.imageUrl || data?.url || data?.output?.[0]?.url || data?.job?.imageUrl;
-
-      if (status && status !== lastStatus) {
-        lastStatus = status;
-        setGenStatus(`Estado: ${status}`);
-      }
-
-      if (imageUrl) return { ...data, imageUrl };
-
-      await new Promise((res) => setTimeout(res, 800));
+    if (status && status !== lastStatus) {
+      lastStatus = status;
+      setGenStatus(`Estado: ${status}`);
     }
 
-    throw new Error("Timeout waiting for image");
+    if (imageUrl) return { ...data, imageUrl };
+    await new Promise((res) => setTimeout(res, 800));
   }
+
+  throw new Error("Timeout waiting for image");
+}
+
 
   function normalizeJobId(created) {
     const jobId =
@@ -1051,107 +1070,140 @@ const headerUser = useMemo(() => {
   }
 
   /* ----------------------------- Chat ----------------------------- */
+// ✅ Asegúrate de importar getAuthToken desde donde lo tengas
+// Ejemplo:
+// import { getAuthToken } from "../lib/authToken";
 
-  async function sendChat() {
-    const text = chatInput.trim();
-    if (!text || busy || !activeProject) return;
+async function sendChat() {
+  const text = (chatInput || "").trim();
+  if (!text || busy || !activeProject) return;
 
-    setChatInput("");
-    setBusy(true);
-    pushMsg("chat", { role: "user", text });
+  setChatInput("");
+  setBusy(true);
+  pushMsg("chat", { role: "user", text });
 
-    if (abortRef.current) abortRef.current.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
+  // Cancelar request anterior si existe
+  if (abortRef.current) abortRef.current.abort();
+  const ac = new AbortController();
+  abortRef.current = ac;
 
-    try {
-      const token = await getIdTokenForce().catch(() => null);
+  try {
+    // ✅ Token (NO revienta si no hay login)
+    const token = await getAuthToken().catch(() => null);
 
-      let assistantText = "";
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ message: text, projectId: activeProjectId }),
-        signal: ac.signal,
-      }).catch(() => null);
+    let assistantText = "";
 
-      if (r && r.ok) {
-        const data = await r.json().catch(() => ({}));
-        assistantText = data?.text || data?.message || "";
-      } else if (r && !r.ok) {
-        const data = await r.json().catch(() => ({}));
-        assistantText = `⚠️ /api/chat error ${r.status}: ${data?.error || "Unknown"}`;
-      }
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        message: text,
+        projectId: activeProjectId,
+      }),
+      signal: ac.signal,
+    }).catch(() => null);
 
-      if (!assistantText) assistantText = "💬 Chat AUREA listo.";
-
-      pushMsg("chat", { role: "assistant", text: assistantText });
-    } catch (e) {
-      const msg = e?.message || "Error en chat";
-      pushMsg("chat", { role: "assistant", text: `⚠️ Chat error: ${msg}` });
-      toast("Chat error", msg, "error", 4200);
-    } finally {
-      setBusy(false);
+    if (r && r.ok) {
+      const data = await r.json().catch(() => ({}));
+      assistantText = data?.text || data?.message || "";
+    } else if (r && !r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const extra =
+        r.status === 401 || r.status === 403
+          ? " (token inválido o sesión expirada)"
+          : "";
+      assistantText = `⚠️ /api/chat error ${r.status}${extra}: ${
+        data?.error || "Unknown"
+      }`;
     }
-  }
 
-  /* ----------------------------- Code ----------------------------- */
+    if (!assistantText) assistantText = "💬 Chat AUREA listo.";
 
-  async function sendCode() {
-    const text = codeInput.trim();
-    if (!text || busy || !activeProject) return;
-
-    setCodeInput("");
-    setBusy(true);
-    pushMsg("code", { role: "user", text });
-
-    if (abortRef.current) abortRef.current.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-
-    try {
-      const token = await getIdTokenForce().catch(() => null);
-
-      let assistantText = "";
-      const r = await fetch("/api/code", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ prompt: text, projectId: activeProjectId }),
-        signal: ac.signal,
-      }).catch(() => null);
-
-      if (r && r.ok) {
-        const data = await r.json().catch(() => ({}));
-        assistantText = data?.text || data?.message || "";
-      } else if (r && !r.ok) {
-        const data = await r.json().catch(() => ({}));
-        assistantText = `⚠️ /api/code error ${r.status}: ${data?.error || "Unknown"}`;
-      }
-
-      if (!assistantText) assistantText = "🧠 Modo Código listo.";
-
-      pushMsg("code", { role: "assistant", text: assistantText });
-    } catch (e) {
-      const msg = e?.message || "Error en código";
-      pushMsg("code", { role: "assistant", text: `⚠️ Código error: ${msg}` });
-      toast("Code error", msg, "error", 4200);
-    } finally {
-      setBusy(false);
+    pushMsg("chat", { role: "assistant", text: assistantText });
+  } catch (e) {
+    // Si abortaste manualmente, no lo trates como error real
+    if (e?.name === "AbortError") {
+      pushMsg("chat", { role: "assistant", text: "⏹️ Chat cancelado." });
+      return;
     }
+
+    const msg = e?.message || "Error en chat";
+    pushMsg("chat", { role: "assistant", text: `⚠️ Chat error: ${msg}` });
+    toast("Chat error", msg, "error", 4200);
+  } finally {
+    setBusy(false);
   }
+}
 
-  /* =======================================================================================
-     ✅✅✅ EXCEL: CONEXIÓN REAL (WIZARD -> NEXT API -> DOWNLOAD) ✅✅✅
-     (NO TOCO IMAGES)
-     ======================================================================================= */
+ /* ----------------------------- Code ----------------------------- */
 
- // ✅ CAMBIO CLAVE: ya NO pegamos a 8081 (Flask). Ahora es Next API route.
+async function sendCode() {
+  const text = (codeInput || "").trim();
+  if (!text || busy || !activeProject) return;
+
+  setCodeInput("");
+  setBusy(true);
+  pushMsg("code", { role: "user", text });
+
+  if (abortRef.current) abortRef.current.abort();
+  const ac = new AbortController();
+  abortRef.current = ac;
+
+  try {
+    // ✅ Token unificado (NO revienta si no hay sesión)
+    const token = await getAuthToken().catch(() => null);
+
+    let assistantText = "";
+    const r = await fetch("/api/code", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ prompt: text, projectId: activeProjectId }),
+      signal: ac.signal,
+    }).catch(() => null);
+
+    if (r && r.ok) {
+      const data = await r.json().catch(() => ({}));
+      assistantText = data?.text || data?.message || "";
+    } else if (r && !r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const extra =
+        r.status === 401 || r.status === 403
+          ? " (token inválido o sesión expirada)"
+          : "";
+      assistantText = `⚠️ /api/code error ${r.status}${extra}: ${
+        data?.error || "Unknown"
+      }`;
+    }
+
+    if (!assistantText) assistantText = "🧠 Modo Código listo.";
+
+    pushMsg("code", { role: "assistant", text: assistantText });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      pushMsg("code", { role: "assistant", text: "⏹️ Código cancelado." });
+      return;
+    }
+    const msg = e?.message || "Error en código";
+    pushMsg("code", { role: "assistant", text: `⚠️ Código error: ${msg}` });
+    toast("Code error", msg, "error", 4200);
+  } finally {
+    setBusy(false);
+  }
+}
+
+
+ /* =======================================================================================
+   ✅✅✅ EXCEL: CONEXIÓN REAL (WIZARD -> NEXT API -> DOWNLOAD) ✅✅✅
+   (NO TOCO IMAGES)
+   ======================================================================================= */
+
+// ✅ CAMBIO CLAVE: ya NO pegamos a 8081 (Flask). Ahora es Next API route.
 const EXCEL_ENDPOINT = "/api/excel";
 
 const setExcelMeta = (patch) => {
@@ -1193,7 +1245,8 @@ function buildExampleRows(columns) {
   const base = {};
   columns.forEach((c) => {
     if (c.type === "date") base[c.key] = new Date().toISOString().slice(0, 10);
-    else if (c.type === "currency") base[c.key] = Math.floor(1000 + Math.random() * 5000);
+    else if (c.type === "currency")
+      base[c.key] = Math.floor(1000 + Math.random() * 5000);
     else if (c.key === "estatus") base[c.key] = "Pendiente";
     else if (c.key === "banco") base[c.key] = "Caja";
     else if (c.key === "categoria") base[c.key] = "General";
@@ -1239,7 +1292,9 @@ const wizardPayloadToSpec = (payload) => {
 
   // ✅ Cuentas por cobrar/pagar
   const isCuentas =
-    controlType.includes("cuentas") || purpose.includes("cobrar") || purpose.includes("pagar");
+    controlType.includes("cuentas") ||
+    purpose.includes("cobrar") ||
+    purpose.includes("pagar");
 
   if (isCuentas) {
     columns = [
@@ -1308,24 +1363,68 @@ const wizardPayloadToSpec = (payload) => {
   if (isFlujo) {
     const L_in = colLetter(columns, "entrada");
     const L_out = colLetter(columns, "salida");
-    kpis.push({ label: "Entradas", formula: `=SUM(${sheetName}!${L_in}:${L_in})`, format: "currency" });
-    kpis.push({ label: "Salidas", formula: `=SUM(${sheetName}!${L_out}:${L_out})`, format: "currency" });
+    kpis.push({
+      label: "Entradas",
+      formula: `=SUM(${sheetName}!${L_in}:${L_in})`,
+      format: "currency",
+    });
+    kpis.push({
+      label: "Salidas",
+      formula: `=SUM(${sheetName}!${L_out}:${L_out})`,
+      format: "currency",
+    });
     // Balance = KPI0 - KPI1, refs reales Dashboard
-    kpis.push({ label: "Balance", formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`, format: "currency" });
-    kpis.push({ label: "Saldo total", formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`, format: "currency" });
+    kpis.push({
+      label: "Balance",
+      formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`,
+      format: "currency",
+    });
+    kpis.push({
+      label: "Saldo total",
+      formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`,
+      format: "currency",
+    });
   } else if (isCuentas) {
-    kpis.push({ label: "Monto total", formula: `=SUM(${sheetName}!${colLetter(columns, "monto")}:${colLetter(columns, "monto")})`, format: "currency" });
-    kpis.push({ label: "Abonos", formula: `=SUM(${sheetName}!${colLetter(columns, "abono")}:${colLetter(columns, "abono")})`, format: "currency" });
-    kpis.push({ label: "Saldo total", formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`, format: "currency" });
+    kpis.push({
+      label: "Monto total",
+      formula: `=SUM(${sheetName}!${colLetter(columns, "monto")}:${colLetter(columns, "monto")})`,
+      format: "currency",
+    });
+    kpis.push({
+      label: "Abonos",
+      formula: `=SUM(${sheetName}!${colLetter(columns, "abono")}:${colLetter(columns, "abono")})`,
+      format: "currency",
+    });
+    kpis.push({
+      label: "Saldo total",
+      formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`,
+      format: "currency",
+    });
     // Por si quieres “pendientes” numérico: COUNTIF en estatus
-    kpis.push({ label: "Pendientes", formula: `=COUNTIF(${sheetName}!${colLetter(columns, "estatus")}:${colLetter(columns, "estatus")},"Pendiente")`, format: "number" });
+    kpis.push({
+      label: "Pendientes",
+      formula: `=COUNTIF(${sheetName}!${colLetter(columns, "estatus")}:${colLetter(columns, "estatus")},"Pendiente")`,
+      format: "number",
+    });
   } else {
     // default Ingresos/Egresos
     const L_in = colLetter(columns, "ingreso");
     const L_out = colLetter(columns, "egreso");
-    kpis.push({ label: "Ingresos", formula: `=SUM(${sheetName}!${L_in}:${L_in})`, format: "currency" });
-    kpis.push({ label: "Egresos", formula: `=SUM(${sheetName}!${L_out}:${L_out})`, format: "currency" });
-    kpis.push({ label: "Balance", formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`, format: "currency" });
+    kpis.push({
+      label: "Ingresos",
+      formula: `=SUM(${sheetName}!${L_in}:${L_in})`,
+      format: "currency",
+    });
+    kpis.push({
+      label: "Egresos",
+      formula: `=SUM(${sheetName}!${L_out}:${L_out})`,
+      format: "currency",
+    });
+    kpis.push({
+      label: "Balance",
+      formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`,
+      format: "currency",
+    });
   }
 
   if (wantsDashboard) {
@@ -1377,8 +1476,8 @@ async function generateExcelFromWizard(payload) {
   setGenStatus("🧾 Generando Excel...");
 
   try {
-    // ✅ opcional token (si tu /api/excel lo usa)
-    const token = await getIdTokenForce().catch(() => null);
+    // ✅ token opcional (si tu /api/excel lo usa)
+    const token = await getAuthToken().catch(() => null);
 
     const r = await fetch(EXCEL_ENDPOINT, {
       method: "POST",
@@ -1400,8 +1499,16 @@ async function generateExcelFromWizard(payload) {
     });
 
     if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      throw new Error(txt || `HTTP ${r.status}`);
+      // intenta json -> text
+      let errMsg = "";
+      const ct = r.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const j = await r.json().catch(() => ({}));
+        errMsg = j?.error || j?.message || "";
+      } else {
+        errMsg = await r.text().catch(() => "");
+      }
+      throw new Error(errMsg || `HTTP ${r.status}`);
     }
 
     const blob = await r.blob();
@@ -1426,6 +1533,18 @@ async function generateExcelFromWizard(payload) {
     setGenStatus("✅ Excel descargado");
     toast("Excel descargado ✅", serverName || fileName, "ok");
     return { ok: true, fileName: serverName || fileName };
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      setGenStatus("⏹️ Excel cancelado");
+      toast("Excel cancelado", "Se canceló la generación", "warn", 2500);
+      return { ok: false, aborted: true };
+    }
+    const msg = e?.message || "Failed to fetch";
+    setExcelMeta({ lastError: msg });
+    setGenStatus("");
+    toast("Excel error", msg, "error", 4500);
+    alert(`⚠️ Excel: ${msg}`);
+    return { ok: false, error: msg };
   } finally {
     setBusy(false);
     setTimeout(() => setGenStatus(""), 900);
@@ -1433,15 +1552,7 @@ async function generateExcelFromWizard(payload) {
 }
 
 const onWizardSubmit = async (payload) => {
-  try {
-    await generateExcelFromWizard(payload);
-  } catch (e) {
-    const msg = e?.message || "Failed to fetch";
-    setExcelMeta({ lastError: msg });
-    setGenStatus("");
-    toast("Excel error", msg, "error", 4500);
-    alert(`⚠️ Excel: ${msg}`);
-  }
+  await generateExcelFromWizard(payload);
 };
 
 const generateExcelTest = async () => {
@@ -1463,20 +1574,20 @@ const generateExcelTest = async () => {
     file: { fileName: "prueba.xlsx", sheetName: "Data" },
   };
 
-  try {
-    await generateExcelFromWizard(payload);
-  } catch (e) {
-    const msg = e?.message || "Failed to fetch";
-    setExcelMeta({ lastError: msg });
-    toast("Excel error", msg, "error", 4500);
-    alert(`⚠️ Excel: ${msg}`);
-  }
+  await generateExcelFromWizard(payload);
 };
 
 const resetExcelMeta = () => {
-  setExcelMeta({ lastSpec: null, lastFileName: null, lastOkAt: null, lastError: null });
+  setExcelMeta({
+    lastSpec: null,
+    lastFileName: null,
+    lastOkAt: null,
+    lastError: null,
+  });
   toast("Excel reset", "Meta limpia", "warn");
 };
+
+/* ----------------------------- 🔥🔥FINAL EXCEL  ----------------------------- */
 
   /* ----------------------------- Sidebar: Projects ----------------------------- */
   const createNewProject = () => {
