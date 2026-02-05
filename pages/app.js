@@ -865,6 +865,16 @@ const headerUser = useMemo(() => {
     toast("Export PDF", `Tab: ${tabKey}`, "ok");
   };
 
+  const onLogout = async () => {
+  try {
+    await signOut(auth);
+    router.push("/login");
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+
   /* ----------------------------- AutoScroll ----------------------------- */
   const scrollToBottom = (ref) => {
     const el = ref.current;
