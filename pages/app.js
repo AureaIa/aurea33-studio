@@ -27,6 +27,18 @@ const TABS = [
   { key: "excel", title: "Excel" },
 ];
 
+
+
+// ✅ Header user label (fix: headerUser undefined)
+const headerUser = useMemo(() => {
+  if (!user) return "GUEST";
+  return (
+    user.displayName ||
+    user.email ||
+    (user.uid ? `UID:${String(user.uid).slice(0, 6)}…` : "USER")
+  );
+}, [user]);
+
 /* ----------------------------- LocalStorage ----------------------------- */
 
 function lsKey(uid) {
