@@ -575,42 +575,29 @@ useEffect(() => {
   };
 
   /* ----------------------------- Auth bootstrap ----------------------------- */
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u || null);
-      setAuthReady(true);
-      if (!u) router.push("/login");
-    });
-    return () => unsub();
-  }, [router]);
+useEffect(() => {
+  const unsub = onAuthStateChanged(auth, (u) => {
+    setUser(u || null);
+    setAuthReady(true);
 
-  const headerUser = useMemo(() => user?.email || "—", [user]);
+    if (!u) {
+      router.push("/login");
+      return;
+    }
 
-  const getIdTokenForce = async () => {
-    const u = auth.currentUser;
-    if (!u) throw new Error("No hay usuario autenticado");
-    return await u.getIdToken(true);
-  };
+    // ✅ 1) Tab persistente
+    const savedTab = safeGetLS(lsKeyActiveTab(u.uid), null);
+    const allowed = new Set((TABS || []).map((t) => t.key));
+    const nextTab = savedTab && allowed.has(savedTab) ? savedTab : (TABS?.[0]?.key || "chat");
+    setActiveTab(nextTab);
 
-  const onLogout = async () => {
-    await signOut(auth);
-    router.push("/login");
-  };
+    // ✅ 2) Sidebar collapsed persistente
+    const savedCollapsed = safeGetLS(lsKeySidebar(u.uid), null);
+    if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "1");
+  });
 
-// dentro del onAuthStateChanged(auth, (u) => { ... })
-if (u) {
-  // 1) Tab persistente
-  const savedTab = safeGetLS(lsKeyActiveTab(u.uid), null);
-
-  // valida que exista en TABS
-  const allowed = new Set((TABS || []).map(t => t.key));
-  const nextTab = savedTab && allowed.has(savedTab) ? savedTab : (TABS?.[0]?.key || "chat");
-  setActiveTab(nextTab);
-
-  // 2) Sidebar collapsed persistente
-  const savedCollapsed = safeGetLS(lsKeySidebar(u.uid), null);
-  if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "1");
-}
+  return () => unsub();
+}, [router]);
 
 
   /* ----------------------------- Projects load/save ----------------------------- */
@@ -1775,7 +1762,6 @@ const SidebarContent = () => (
       </button>
     </div>
 
-const sidebarW = sidebarCollapsed ? "w-[72px]" : "w-[280px]";
 
     {/* Live Metrics */}
     <div style={metricsWrap()}>
@@ -2089,7 +2075,7 @@ const MobileSidebarContent = SidebarContent;
         <div style={layout(compact, hudOpen || inspectorOpen)}>
 
           {/* Sidebar */}
-         <aside style={{ ...sidebar(), ...(isMobile ? { display: "none" } : {}) }}>
+         <aside style={{ ...sidebar(), ...(safeIsMobile ? { display: "none" } : {}) }}>
   <SidebarContent />
 </aside>
 
