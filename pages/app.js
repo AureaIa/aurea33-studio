@@ -355,38 +355,6 @@ export default function AppPage() {
 const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
 const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-const [studioDoc, setStudioDoc] = useState(null);
-
-
-// -----------------------------
-// Theme (light / dark) ✅ FULL
-// -----------------------------
-
-//🔥 ✅ cargar doc al loguear/cambiar user
-useEffect(() => {
-  const uid = user?.uid;
-  if (!uid) return;
-
-  const raw = localStorage.getItem(studioDocKey(uid));
-  const loaded = safeJsonParse(raw, null);
-
-  if (loaded) setStudioDoc(loaded);
-  else {
-    // doc base vacío si no existe
-    setStudioDoc({
-      version: 1,
-      meta: { title: "Untitled", w: 1080, h: 1080, bg: "#0b1020" },
-      nodes: [],
-    });
-  }
-}, [user?.uid]);
-
-// ✅ persistencia inmediata del doc
-useEffect(() => {
-  const uid = user?.uid;
-  if (!uid || !studioDoc) return;
-  localStorage.setItem(studioDocKey(uid), JSON.stringify(studioDoc));
-}, [user?.uid, studioDoc]);
 
 const STUDIO_TEMPLATES = [
   { id: "fb_post", name: "Facebook Post", w: 1080, h: 1080, bg: "#0b1020" },
@@ -1986,7 +1954,7 @@ const SidebarContent = () => (
     </div>
 
     <div style={miniTabsRow()}>
-      <span style={miniTabPill(activeTab === "chat")} onClick={() => setActiveTab("chat")}>
+<span style={miniTabPill(activeTab === "chat")} onClick={() => setTab("chat")}>
         💬 Chat
       </span>
       <span style={miniTabPill(activeTab === "code")} onClick={() => setActiveTab("code")}>
@@ -2274,7 +2242,8 @@ const MobileSidebarContent = SidebarContent;
             {/* Tabs */}
             <div style={tabsBar()}>
               {TABS.map((t) => (
-                <button key={t.key} onClick={() => setActiveTab(t.key)} style={tabBtn(activeTab === t.key)}>
+                <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(activeTab === t.key)}>
+
                   {t.title}
                 </button>
               ))}
@@ -2415,7 +2384,7 @@ const MobileSidebarContent = SidebarContent;
   const activeDocEntry = studioSafe.docs.find((d) => d.id === studioSafe.meta.activeDocId);
   const canvasDoc = activeDocEntry?.doc;
 
-  const setStudioDoc = (nextDoc) => {
+  const setCanvasDoc = (nextDoc) => {
   const nextStudio = {
     ...studioSafe,
     docs: (studioSafe.docs || []).map((d) =>
@@ -2426,6 +2395,7 @@ const MobileSidebarContent = SidebarContent;
   };
   updateProjectTab("studio", nextStudio);
 };
+
 
 
   const setActiveDoc = (docId) => {
@@ -2563,11 +2533,11 @@ const MobileSidebarContent = SidebarContent;
            <CanvasEditorClient
   studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
   onChange={(nextStudio) => {
-    // nextStudio.doc trae el doc actualizado
-    setStudioDoc(nextStudio.doc);
+    setCanvasDoc(nextStudio.doc);
   }}
   compact={compact}
 />
+
 
 
 
