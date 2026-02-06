@@ -71,7 +71,16 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       panY: typeof m.panY === "number" ? m.panY : 0,
       presetKey: typeof m.presetKey === "string" ? m.presetKey : presetByWH(w, h),
     };
-  }, [doc?.meta]);
+  }, [
+  doc?.meta?.w,
+  doc?.meta?.h,
+  doc?.meta?.bg,
+  doc?.meta?.zoom,
+  doc?.meta?.panX,
+  doc?.meta?.panY,
+  doc?.meta?.presetKey,
+]);
+
 
   const nodes = doc?.nodes || [];
   const selectedId = doc?.selectedId || null;
@@ -439,13 +448,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     const pixelRatio = maxSide > 2200 ? 1.5 : 2;
 
     const uri = stage.toDataURL({
-      x: frame.x,
-      y: frame.y,
-      width: frame.w,
-      height: frame.h,
-      pixelRatio,
-      mimeType: "image/png",
-    });
+  x: Math.round(frame.x),
+  y: Math.round(frame.y),
+  width: Math.round(frame.w),
+  height: Math.round(frame.h),
+  pixelRatio,
+  mimeType: "image/png",
+});
+
 
     const a = document.createElement("a");
     a.href = uri;
@@ -532,7 +542,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   /* ----------------------------- Visual: Futuristic UI helpers ----------------------------- */
 
-  const cursorStyle = isSpaceDown || isPanning ? "grab" : "default";
+const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
 
   const presetValue = metaSafe.presetKey || presetByWH(metaSafe.w, metaSafe.h);
 
@@ -662,7 +672,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       >
         <Layer>
           {/* background */}
-          <Rect x={0} y={0} width={containerSize.w} height={containerSize.h} fill="#060A12" />
+          <Rect x={0} y={0} width={containerSize.w} height={containerSize.h} fill="#060A12" listening={false} />
 
           {/* futuristic grid (lightweight) */}
           {/* vertical lines */}
@@ -674,6 +684,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                 points={[x, 0, x, containerSize.h]}
                 stroke="rgba(255,255,255,0.04)"
                 strokeWidth={1}
+                  listening={false}
+
               />
             );
           })}
@@ -692,16 +704,18 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
           {/* canvas frame */}
           <Rect
-            x={frame.x}
-            y={frame.y}
-            width={frame.w}
-            height={frame.h}
-            fill={metaSafe.bg}
-            cornerRadius={22}
-            shadowColor="black"
-            shadowBlur={22}
-            shadowOpacity={0.38}
-          />
+  x={frame.x}
+  y={frame.y}
+  width={frame.w}
+  height={frame.h}
+  fill={metaSafe.bg}
+  cornerRadius={22}
+  shadowColor="black"
+  shadowBlur={22}
+  shadowOpacity={0.38}
+  listening={false}
+/>
+
 
           {/* nodes */}
           {nodes.map((n) => {
