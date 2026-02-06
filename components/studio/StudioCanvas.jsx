@@ -56,6 +56,10 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [editingBox, setEditingBox] = useState(null);
   const textareaRef = useRef(null);
 
+  // Floating panels (premium)
+  const [showProps, setShowProps] = useState(true);
+  const [propsMin, setPropsMin] = useState(false);
+
   /* ----------------------------- Doc safe ----------------------------- */
 
   const metaSafe = useMemo(() => {
@@ -71,16 +75,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       panY: typeof m.panY === "number" ? m.panY : 0,
       presetKey: typeof m.presetKey === "string" ? m.presetKey : presetByWH(w, h),
     };
-  }, [
-  doc?.meta?.w,
-  doc?.meta?.h,
-  doc?.meta?.bg,
-  doc?.meta?.zoom,
-  doc?.meta?.panX,
-  doc?.meta?.panY,
-  doc?.meta?.presetKey,
-]);
-
+  }, [doc?.meta?.w, doc?.meta?.h, doc?.meta?.bg, doc?.meta?.zoom, doc?.meta?.panX, doc?.meta?.panY, doc?.meta?.presetKey]);
 
   const nodes = doc?.nodes || [];
   const selectedId = doc?.selectedId || null;
@@ -145,6 +140,62 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     },
     [nodes, selectedId, updateNode]
   );
+
+  /* ----------------------------- Selected model ----------------------------- */
+
+  const selectedNodeModel = useMemo(
+    () => (selectedId ? nodes.find((n) => n.id === selectedId) : null),
+    [nodes, selectedId]
+  );
+
+  /* ----------------------------- Quick add actions ----------------------------- */
+
+  const addRect = useCallback(() => {
+    const id = uid();
+    commit({
+      nodes: [
+        ...nodes,
+        {
+          id,
+          type: "rect",
+          x: 140,
+          y: 140,
+          width: 420,
+          height: 220,
+          fill: "#2B3A67",
+          cornerRadius: 18,
+          rotation: 0,
+        },
+      ],
+      selectedId: id,
+    });
+    setShowProps(true);
+    setPropsMin(false);
+  }, [commit, nodes]);
+
+  const addText = useCallback(() => {
+    const id = uid();
+    commit({
+      nodes: [
+        ...nodes,
+        {
+          id,
+          type: "text",
+          x: 160,
+          y: 160,
+          text: "Texto AUREA",
+          fontSize: 56,
+          fontFamily: "Inter, system-ui",
+          fill: "#E9EEF9",
+          rotation: 0,
+          lineHeight: 1.15,
+        },
+      ],
+      selectedId: id,
+    });
+    setShowProps(true);
+    setPropsMin(false);
+  }, [commit, nodes]);
 
   /* ----------------------------- Resize observer ----------------------------- */
 
@@ -428,34 +479,26 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     const p = CANVAS_PRESETS.find((x) => x.key === presetKey);
     if (!p) return;
 
-    // Persist presetKey so select stays controlled and you can detect parent resets
+    // Persist presetKey so select stays controlled
     commitMeta({ presetKey: p.key, w: p.w, h: p.h, panX: 0, panY: 0, zoom: 1 });
     setSelected(null);
-
-    console.log("APPLY PRESET", presetKey, p.w, p.h);
-    // Helps catch parent overwriting meta:
-    setTimeout(() => {
-      console.log("META AFTER PRESET", doc?.meta?.w, doc?.meta?.h, doc?.meta?.presetKey);
-    }, 0);
   };
 
   const exportPNG = () => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    // For large sizes, keep pixelRatio reasonable
     const maxSide = Math.max(metaSafe.w, metaSafe.h);
     const pixelRatio = maxSide > 2200 ? 1.5 : 2;
 
     const uri = stage.toDataURL({
-  x: Math.round(frame.x),
-  y: Math.round(frame.y),
-  width: Math.round(frame.w),
-  height: Math.round(frame.h),
-  pixelRatio,
-  mimeType: "image/png",
-});
-
+      x: Math.round(frame.x),
+      y: Math.round(frame.y),
+      width: Math.round(frame.w),
+      height: Math.round(frame.h),
+      pixelRatio,
+      mimeType: "image/png",
+    });
 
     const a = document.createElement("a");
     a.href = uri;
@@ -504,7 +547,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         duplicateSelected();
       }
 
-      if (isMod && (ev.key === "0")) {
+      if (isMod && ev.key === "0") {
         ev.preventDefault();
         fitSmart();
       }
@@ -542,8 +585,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   /* ----------------------------- Visual: Futuristic UI helpers ----------------------------- */
 
-const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
-
+  const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
   const presetValue = metaSafe.presetKey || presetByWH(metaSafe.w, metaSafe.h);
 
   /* ----------------------------- Render ----------------------------- */
@@ -601,21 +643,53 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
               >
                 Export PNG
               </button>
+
+              {/* Properties Toggle */}
+              <button
+                className={`ml-1 px-3 py-2 rounded-xl border text-xs shadow-[0_16px_40px_rgba(0,0,0,.35)] backdrop-blur-md
+                ${
+                  showProps
+                    ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25"
+                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
+                }`}
+                onClick={() => setShowProps((v) => !v)}
+                title="Mostrar/Ocultar propiedades"
+              >
+                Propiedades
+              </button>
             </div>
 
             <div className="ml-3 hidden md:flex items-center gap-2 text-[11px] text-white/50">
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">
-                Wheel=Zoom
-              </span>
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">
-                Space+Drag=Pan
-              </span>
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">
-                DblClick Text=Edit
-              </span>
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">
-                Ctrl/Cmd+0=Fit
-              </span>
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Wheel=Zoom</span>
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Space+Drag=Pan</span>
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">DblClick Text=Edit</span>
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Ctrl/Cmd+0=Fit</span>
+            </div>
+
+            {/* Quick actions (designer-grade) */}
+            <div className="ml-3 hidden lg:flex items-center gap-2">
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={addText}
+                title="Agregar texto"
+              >
+                + Texto
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={addRect}
+                title="Agregar bloque"
+              >
+                + Bloque
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-400/20 hover:bg-rose-500/25 text-rose-100 text-xs disabled:opacity-40"
+                onClick={deleteSelected}
+                disabled={!selectedId}
+                title="Eliminar (Del)"
+              >
+                Eliminar
+              </button>
             </div>
           </div>
 
@@ -657,6 +731,135 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
         />
       )}
 
+      {/* Floating Properties Panel (no more sidebars amontonadas) */}
+      {showProps && selectedNodeModel && (
+        <div className="absolute right-4 top-20 z-30 pointer-events-auto">
+          <div
+            className={`w-[320px] ${propsMin ? "h-[46px]" : "h-auto"} rounded-2xl border border-white/10 bg-[#060A12]/75 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden`}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-amber-400/90 shadow-[0_0_18px_rgba(251,191,36,.55)]" />
+                <div className="text-white/90 text-xs font-semibold tracking-wide">Propiedades</div>
+                <div className="text-white/40 text-[11px]">
+                  {String(selectedNodeModel.type || "").toUpperCase()} • {selectedNodeModel.id.slice(-6)}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                  onClick={() => setPropsMin((v) => !v)}
+                  title="Minimizar"
+                >
+                  {propsMin ? "Expandir" : "Min"}
+                </button>
+                <button
+                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                  onClick={() => setShowProps(false)}
+                  title="Cerrar"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {!propsMin && (
+              <div className="p-3 space-y-3">
+                {/* Position */}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-white/50">
+                    X
+                    <input
+                      className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                      type="number"
+                      value={Math.round(selectedNodeModel.x || 0)}
+                      onChange={(e) => updateNode(selectedId, { x: Number(e.target.value || 0) })}
+                    />
+                  </label>
+                  <label className="text-[11px] text-white/50">
+                    Y
+                    <input
+                      className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                      type="number"
+                      value={Math.round(selectedNodeModel.y || 0)}
+                      onChange={(e) => updateNode(selectedId, { y: Number(e.target.value || 0) })}
+                    />
+                  </label>
+                </div>
+
+                {/* Size for rect */}
+                {selectedNodeModel.type === "rect" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-[11px] text-white/50">
+                      Ancho
+                      <input
+                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                        type="number"
+                        value={Math.round(selectedNodeModel.width || 0)}
+                        onChange={(e) => updateNode(selectedId, { width: Math.max(10, Number(e.target.value || 10)) })}
+                      />
+                    </label>
+                    <label className="text-[11px] text-white/50">
+                      Alto
+                      <input
+                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                        type="number"
+                        value={Math.round(selectedNodeModel.height || 0)}
+                        onChange={(e) => updateNode(selectedId, { height: Math.max(10, Number(e.target.value || 10)) })}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {/* Text controls */}
+                {selectedNodeModel.type === "text" && (
+                  <div className="space-y-2">
+                    <label className="text-[11px] text-white/50">
+                      Texto
+                      <input
+                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                        value={selectedNodeModel.text || ""}
+                        onChange={(e) => updateNode(selectedId, { text: e.target.value })}
+                      />
+                    </label>
+
+                    <label className="text-[11px] text-white/50">
+                      Tamaño
+                      <input
+                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                        type="number"
+                        value={Math.round(selectedNodeModel.fontSize || 32)}
+                        onChange={(e) => updateNode(selectedId, { fontSize: clamp(Number(e.target.value || 32), 8, 512) })}
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {/* Common */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                    onClick={duplicateSelected}
+                    title="Duplicar (Ctrl/Cmd+D)"
+                  >
+                    Duplicar
+                  </button>
+                  <button
+                    className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-400/20 hover:bg-rose-500/25 text-rose-100 text-xs"
+                    onClick={deleteSelected}
+                    title="Eliminar (Del)"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <Stage
         ref={stageRef}
         width={containerSize.w}
@@ -675,7 +878,6 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
           <Rect x={0} y={0} width={containerSize.w} height={containerSize.h} fill="#060A12" listening={false} />
 
           {/* futuristic grid (lightweight) */}
-          {/* vertical lines */}
           {Array.from({ length: Math.ceil(containerSize.w / 80) }).map((_, i) => {
             const x = i * 80;
             return (
@@ -684,12 +886,10 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
                 points={[x, 0, x, containerSize.h]}
                 stroke="rgba(255,255,255,0.04)"
                 strokeWidth={1}
-                  listening={false}
-
+                listening={false}
               />
             );
           })}
-          {/* horizontal lines */}
           {Array.from({ length: Math.ceil(containerSize.h / 80) }).map((_, i) => {
             const y = i * 80;
             return (
@@ -698,24 +898,24 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
                 points={[0, y, containerSize.w, y]}
                 stroke="rgba(255,255,255,0.04)"
                 strokeWidth={1}
+                listening={false}
               />
             );
           })}
 
           {/* canvas frame */}
           <Rect
-  x={frame.x}
-  y={frame.y}
-  width={frame.w}
-  height={frame.h}
-  fill={metaSafe.bg}
-  cornerRadius={22}
-  shadowColor="black"
-  shadowBlur={22}
-  shadowOpacity={0.38}
-  listening={false}
-/>
-
+            x={frame.x}
+            y={frame.y}
+            width={frame.w}
+            height={frame.h}
+            fill={metaSafe.bg}
+            cornerRadius={22}
+            shadowColor="black"
+            shadowBlur={22}
+            shadowOpacity={0.38}
+            listening={false}
+          />
 
           {/* nodes */}
           {nodes.map((n) => {
@@ -735,8 +935,14 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
                   draggable={!isSpaceDown && !editingId}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  onClick={() => setSelected(n.id)}
-                  onTap={() => setSelected(n.id)}
+                  onClick={() => {
+                    setSelected(n.id);
+                    setShowProps(true);
+                  }}
+                  onTap={() => {
+                    setSelected(n.id);
+                    setShowProps(true);
+                  }}
                   onDragEnd={(e) => {
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
@@ -762,8 +968,14 @@ const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
                   draggable={!isSpaceDown && !editingId}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  onClick={() => setSelected(n.id)}
-                  onTap={() => setSelected(n.id)}
+                  onClick={() => {
+                    setSelected(n.id);
+                    setShowProps(true);
+                  }}
+                  onTap={() => {
+                    setSelected(n.id);
+                    setShowProps(true);
+                  }}
                   onDblClick={() => openTextEditor(n)}
                   onDblTap={() => openTextEditor(n)}
                   onDragEnd={(e) => {
