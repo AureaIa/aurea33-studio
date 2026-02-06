@@ -1,3 +1,4 @@
+// components/studio/CanvasEditor.jsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -16,20 +17,17 @@ const TEMPLATES = [
 function uid() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
-
 function safeNum(x, fallback) {
   return typeof x === "number" && Number.isFinite(x) ? x : fallback;
 }
-
 function safeStr(x, fallback) {
   return typeof x === "string" && x.length ? x : fallback;
 }
-
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-/** normalizeDoc = tu “seguro anti-bugs” */
+/** normalizeDoc = seguro anti-bugs */
 function normalizeDoc(input) {
   if (!input) return null;
 
@@ -82,7 +80,7 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
         type: "text",
         x: 84,
         y: 180,
-        text: "Canvas persistente PRO",
+        text: "Canva-killer UI (preview) ✨",
         fontSize: 34,
         fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
         fill: "rgba(233,238,249,0.78)",
@@ -91,124 +89,6 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
     ],
     selectedId: null,
   });
-}
-
-/* ----------------------------- Premium UI atoms ----------------------------- */
-
-function Icon({ children }) {
-  return (
-    <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition">
-      {children}
-    </span>
-  );
-}
-
-function GlassBtn({ children, className = "", ...props }) {
-  return (
-    <button
-      {...props}
-      className={
-        "px-3 py-2 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/90 text-xs shadow-[0_16px_40px_rgba(0,0,0,.38)] backdrop-blur-md transition " +
-        className
-      }
-    >
-      {children}
-    </button>
-  );
-}
-
-function Chip({ children }) {
-  return (
-    <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-white/70">
-      {children}
-    </span>
-  );
-}
-
-/* ----------------------------- Floating panel ----------------------------- */
-
-function FloatingPanel({
-  title = "Panel",
-  children,
-  isOpen,
-  onClose,
-  minimized,
-  onToggleMin,
-  pos,
-  onPos,
-  width = 340,
-}) {
-  const dragRef = useRef(null);
-  const startRef = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
-  const [dragging, setDragging] = useState(false);
-
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e) => {
-      const dx = e.clientX - startRef.current.x;
-      const dy = e.clientY - startRef.current.y;
-      onPos?.({ x: startRef.current.ox + dx, y: startRef.current.oy + dy });
-    };
-    const onUp = () => setDragging(false);
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [dragging, onPos]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      className="absolute z-30"
-      style={{
-        left: pos.x,
-        top: pos.y,
-        width,
-      }}
-    >
-      <div className="rounded-3xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_22px_80px_rgba(0,0,0,.6)] overflow-hidden">
-        {/* Header draggable */}
-        <div
-          ref={dragRef}
-          className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-gradient-to-r from-white/5 to-white/0 cursor-grab active:cursor-grabbing"
-          onMouseDown={(e) => {
-            // only left click
-            if (e.button !== 0) return;
-            setDragging(true);
-            startRef.current = { x: e.clientX, y: e.clientY, ox: pos.x, oy: pos.y };
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400/70 shadow-[0_0_0_6px_rgba(16,185,129,.12)]" />
-            <div className="text-white font-semibold text-xs">{title}</div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              className="px-2 py-1 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-              onClick={onToggleMin}
-              title={minimized ? "Expandir" : "Minimizar"}
-            >
-              {minimized ? "Expand" : "Min"}
-            </button>
-            <button
-              className="px-2 py-1 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-              onClick={onClose}
-              title="Cerrar"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {!minimized && <div className="p-3">{children}</div>}
-      </div>
-    </div>
-  );
 }
 
 /* ----------------------------- Component ----------------------------- */
@@ -230,14 +110,17 @@ export default function CanvasEditor({
   const undoRef = useRef([]);
   const redoRef = useRef([]);
 
-  // Floating panels state
-  const [tplOpen, setTplOpen] = useState(false);
-  const [inspOpen, setInspOpen] = useState(true);
-  const [inspMin, setInspMin] = useState(false);
-  const [tplPos, setTplPos] = useState({ x: 18, y: 74 });
-  const [inspPos, setInspPos] = useState({ x: 18, y: 74 });
+  // Left “Canva rail” + panel
+  const [leftTab, setLeftTab] = useState("design"); // design | elements | text | uploads | brand | projects | apps
+  const [leftOpen, setLeftOpen] = useState(true);
 
-  // Sync local doc from outside
+  // Floating Properties window
+  const [propsOpen, setPropsOpen] = useState(false);
+  const [propsMin, setPropsMin] = useState(false);
+  const [propsPos, setPropsPos] = useState({ x: 0, y: 0 });
+  const propsDragRef = useRef({ dragging: false, dx: 0, dy: 0 });
+
+  // Keep local doc in sync when studio.doc changes from outside
   useEffect(() => {
     const next = normalizeDoc(externalDoc);
     setLocalDoc(next);
@@ -246,9 +129,9 @@ export default function CanvasEditor({
   }, [externalDoc?.meta?.presetKey, externalDoc?.meta?.w, externalDoc?.meta?.h]);
 
   const hasDoc = !!localDoc;
+  const shellClass = compact ? "h-[70vh]" : "h-[78vh]";
 
-  const shellClass = compact ? "h-[70vh]" : "h-[82vh]";
-
+  /** commit */
   const commit = useCallback(
     (nextDoc, opts = {}) => {
       const normalized = normalizeDoc(nextDoc);
@@ -311,6 +194,11 @@ export default function CanvasEditor({
       } else if ((k === "z" && ev.shiftKey) || k === "y") {
         ev.preventDefault();
         redo();
+      } else if (k === "i") {
+        // Ctrl/Cmd+I => toggle properties (nice pro shortcut)
+        ev.preventDefault();
+        setPropsOpen((s) => !s);
+        setPropsMin(false);
       }
     };
 
@@ -318,198 +206,530 @@ export default function CanvasEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo]);
 
-  // Position inspector default on right (responsive)
+  // Position the floating props default nicely (only once)
   useEffect(() => {
-    // set once: place inspector to the right side of canvas container
-    // keep safe if user already moved it
-    setInspPos((p) => (p.x === 18 && p.y === 74 ? { x: 24, y: 92 } : p));
+    if (propsPos.x !== 0 || propsPos.y !== 0) return;
+    setPropsPos({ x: 24, y: 120 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const createFromTemplate = (t) => {
+    const next = makeEmptyDoc(t);
+    undoRef.current = [];
+    redoRef.current = [];
+    commit(next, { silent: true });
+    onNewFromTemplate?.(t);
+  };
+
+  /* ----------------------------- UI Shell ----------------------------- */
+
   return (
-    <div className={`w-full ${shellClass} relative`}>
-      {/* ---------------- Main Canvas Area (FULL WIDTH) ---------------- */}
-      <div className="absolute inset-0 rounded-3xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden">
-        {/* Top HUD (premium) */}
-        <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between">
+    <div className={`w-full ${shellClass} flex gap-4`}>
+      {/* LEFT: Canva-like rail + collapsible panel */}
+      <div className="flex gap-3">
+        <CanvaRail
+          value={leftTab}
+          onChange={(k) => {
+            setLeftTab(k);
+            setLeftOpen(true);
+          }}
+          onTogglePanel={() => setLeftOpen((s) => !s)}
+          leftOpen={leftOpen}
+        />
+
+        {leftOpen && (
+          <LeftPanel
+            tab={leftTab}
+            templates={templates}
+            hasDoc={hasDoc}
+            onReset={() => {
+              setLocalDoc(null);
+              undoRef.current = [];
+              redoRef.current = [];
+              onChange?.(null);
+            }}
+            onCreateFromTemplate={createFromTemplate}
+            onOpenProps={() => {
+              setPropsOpen(true);
+              setPropsMin(false);
+            }}
+            doc={localDoc}
+            onChangeDoc={commit}
+          />
+        )}
+      </div>
+
+      {/* MAIN: Canvas Area */}
+      <div className="flex-1 rounded-[26px] border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden relative shadow-[0_20px_70px_rgba(0,0,0,.45)]">
+        {/* Top HUD mini */}
+        <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <GlassBtn
-              onClick={() => {
-                setTplOpen(true);
-                setInspOpen(true);
-              }}
-              title="Abrir paneles"
-              className="hidden sm:inline-flex"
-            >
-              Panels
-            </GlassBtn>
-
-            <GlassBtn onClick={() => setTplOpen((v) => !v)} title="Plantillas">
-              Templates
-            </GlassBtn>
-
-            <GlassBtn onClick={() => setInspOpen((v) => !v)} title="Inspector / Propiedades">
-              Properties
-            </GlassBtn>
-
-            <div className="w-px h-8 bg-white/10 mx-1" />
-
-            <GlassBtn
+            <button
+              className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
               onClick={undo}
               disabled={!undoRef.current.length}
               title="Undo (Ctrl/Cmd+Z)"
-              className={!undoRef.current.length ? "opacity-40 cursor-not-allowed" : ""}
             >
               Undo
-            </GlassBtn>
-
-            <GlassBtn
+            </button>
+            <button
+              className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
               onClick={redo}
               disabled={!redoRef.current.length}
               title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
-              className={!redoRef.current.length ? "opacity-40 cursor-not-allowed" : ""}
             >
               Redo
-            </GlassBtn>
+            </button>
 
-            <GlassBtn
-              onClick={() => {
-                setLocalDoc(null);
-                undoRef.current = [];
-                redoRef.current = [];
-                onChange?.(null);
-              }}
-              title="Reset documento"
-              className="bg-white/4"
+            <div className="w-px h-7 bg-white/10 mx-1" />
+
+            <button
+              className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+              onClick={() => setLeftOpen((s) => !s)}
+              title="Mostrar / ocultar panel izquierdo"
             >
-              Reset
-            </GlassBtn>
+              {leftOpen ? "Ocultar panel" : "Mostrar panel"}
+            </button>
+
+            <button
+              className="px-3 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs shadow-[0_0_0_1px_rgba(16,185,129,.10)]"
+              onClick={() => {
+                setPropsOpen(true);
+                setPropsMin(false);
+              }}
+              title="Propiedades (Ctrl/Cmd+I)"
+            >
+              Propiedades
+            </button>
           </div>
 
           {hasDoc ? (
-            <div className="flex items-center gap-2">
-              <Chip>
-                {localDoc.meta.w}×{localDoc.meta.h}
-              </Chip>
-              <Chip>zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}</Chip>
+            <div className="text-white/70 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+              {localDoc.meta.w}×{localDoc.meta.h} • zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
             </div>
           ) : (
-            <Chip>Selecciona una plantilla</Chip>
+            <div className="text-white/60 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+              Selecciona una plantilla para empezar
+            </div>
           )}
         </div>
 
-        {!hasDoc ? (
-          <EmptyState />
-        ) : (
-          <div className="absolute inset-0">
-            <StudioCanvas doc={localDoc} onChange={commit} compact={compact} />
-          </div>
-        )}
+        {!hasDoc ? <EmptyState /> : <StudioCanvas doc={localDoc} onChange={commit} compact={compact} />}
 
-        {/* Subtle bottom hint */}
-        <div className="absolute bottom-3 left-3 z-10 hidden md:flex gap-2 pointer-events-none">
-          <Chip>Ctrl/Cmd+Z Undo</Chip>
-          <Chip>Ctrl/Cmd+Y Redo</Chip>
-          <Chip>Properties = flotante</Chip>
+        {/* Floating Properties Window */}
+        {propsOpen && (
+          <FloatingWindow
+            title="Propiedades"
+            subtitle="Edita capas y estilos"
+            pos={propsPos}
+            setPos={setPropsPos}
+            dragRef={propsDragRef}
+            minimized={propsMin}
+            onMin={() => setPropsMin((s) => !s)}
+            onClose={() => {
+              setPropsOpen(false);
+              setPropsMin(false);
+            }}
+          >
+            {!localDoc ? (
+              <div className="text-white/60 text-sm">Crea un documento para editar propiedades.</div>
+            ) : (
+              <Inspector doc={localDoc} onChange={commit} />
+            )}
+          </FloatingWindow>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================= UI PIECES ============================= */
+
+function CanvaRail({ value, onChange, onTogglePanel, leftOpen }) {
+  const items = [
+    { key: "design", label: "Diseño", icon: "▦" },
+    { key: "elements", label: "Elementos", icon: "◈" },
+    { key: "text", label: "Texto", icon: "T" },
+    { key: "uploads", label: "Subidos", icon: "☁" },
+    { key: "brand", label: "Marca", icon: "©" },
+    { key: "projects", label: "Proyectos", icon: "▣" },
+    { key: "apps", label: "Apps", icon: "⌁" },
+  ];
+
+  return (
+    <div className="w-[86px] shrink-0 rounded-[26px] border border-white/10 bg-black/35 backdrop-blur-md p-2 shadow-[0_20px_70px_rgba(0,0,0,.45)]">
+      <div className="flex flex-col gap-1">
+        {items.map((it) => {
+          const active = value === it.key;
+          return (
+            <button
+              key={it.key}
+              onClick={() => onChange(it.key)}
+              className={`w-full rounded-2xl px-2 py-3 border transition ${
+                active
+                  ? "bg-amber-400/10 border-amber-300/25 text-amber-100"
+                  : "bg-white/0 border-white/0 hover:bg-white/5 text-white/80"
+              }`}
+              title={it.label}
+            >
+              <div className="flex flex-col items-center gap-1">
+                <div
+                  className={`h-9 w-9 rounded-2xl flex items-center justify-center border ${
+                    active ? "bg-amber-400/10 border-amber-300/20" : "bg-white/5 border-white/10"
+                  }`}
+                >
+                  <span className="text-[16px]">{it.icon}</span>
+                </div>
+                <div className={`text-[11px] ${active ? "text-amber-100" : "text-white/70"}`}>
+                  {it.label}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-2 pt-2 border-t border-white/10">
+        <button
+          onClick={onTogglePanel}
+          className="w-full rounded-2xl px-2 py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+          title="Abrir / cerrar panel"
+        >
+          {leftOpen ? "⟨ Ocultar" : "⟩ Abrir"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LeftPanel({ tab, templates, hasDoc, onReset, onCreateFromTemplate, onOpenProps, doc, onChangeDoc }) {
+  return (
+    <div className="w-[360px] shrink-0 rounded-[26px] border border-white/10 bg-black/30 backdrop-blur-md p-3 shadow-[0_20px_70px_rgba(0,0,0,.45)]">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-white font-semibold text-[15px]">
+            {tab === "design"
+              ? "Plantillas"
+              : tab === "elements"
+              ? "Elementos"
+              : tab === "text"
+              ? "Texto"
+              : tab === "uploads"
+              ? "Subidos"
+              : tab === "brand"
+              ? "Marca"
+              : tab === "projects"
+              ? "Proyectos"
+              : "Apps"}
+          </div>
+          <div className="text-white/50 text-xs">
+            {tab === "design"
+              ? "Elige un formato para iniciar"
+              : "Preview UI (funciones después) 🔥"}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            className="px-3 py-1.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs border border-white/10"
+            onClick={onReset}
+            title="Reset documento"
+          >
+            Reset
+          </button>
+          <button
+            className="px-3 py-1.5 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-100 text-xs border border-emerald-400/20"
+            onClick={onOpenProps}
+            title="Abrir propiedades"
+          >
+            Propiedades
+          </button>
         </div>
       </div>
 
-      {/* ---------------- Floating Templates Panel ---------------- */}
-      <FloatingPanel
-        title="Templates"
-        isOpen={tplOpen}
-        onClose={() => setTplOpen(false)}
-        minimized={false}
-        onToggleMin={() => {}}
-        pos={tplPos}
-        onPos={setTplPos}
-        width={340}
-      >
-        <TemplatesPanel
-          templates={templates}
-          onCreateFromTemplate={(t) => {
-            const next = makeEmptyDoc(t);
-            undoRef.current = [];
-            redoRef.current = [];
-            commit(next, { silent: true });
-            onNewFromTemplate?.(t);
+      {/* Content by tab */}
+      {tab === "design" && (
+        <>
+          <div className="space-y-2">
+            {(templates || []).map((t) => (
+              <button
+                key={t.id}
+                className="w-full text-left rounded-[22px] border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
+                onClick={() => onCreateFromTemplate(t)}
+              >
+                <div className="text-white font-medium">{t.title}</div>
+                <div className="text-white/60 text-xs">{t.subtitle}</div>
+              </button>
+            ))}
+          </div>
 
-            // place inspector on the right side once you have a doc
-            setInspOpen(true);
-            setInspMin(false);
-            setTplOpen(false);
-          }}
+          <div className="mt-4 p-3 rounded-[22px] bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
+            <div className="text-white font-semibold text-sm">Mis diseños</div>
+            <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
+
+            <div className="mt-3 text-white/40 text-[11px]">
+              Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
+              <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+              <span className="text-white/60">Ctrl/Cmd+I</span> Propiedades
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab === "elements" && (
+        <PreviewSection
+          title="Elementos"
+          desc="Aquí van shapes, stickers, grids, marcos, etc."
+          pills={["Formas", "Líneas", "Marcos", "Stickers", "Grids", "Iconos"]}
         />
-      </FloatingPanel>
+      )}
 
-      {/* ---------------- Floating Inspector Panel ---------------- */}
-      <FloatingPanel
-        title="Properties"
-        isOpen={inspOpen}
-        onClose={() => setInspOpen(false)}
-        minimized={inspMin}
-        onToggleMin={() => setInspMin((v) => !v)}
-        pos={inspPos}
-        onPos={setInspPos}
-        width={360}
-      >
-        {!localDoc ? (
-          <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div>
-        ) : (
-          <Inspector doc={localDoc} onChange={commit} />
-        )}
-      </FloatingPanel>
+      {tab === "text" && (
+        <TextQuickPanel hasDoc={hasDoc} doc={doc} onChangeDoc={onChangeDoc} />
+      )}
+
+      {tab === "uploads" && (
+        <PreviewSection
+          title="Subidos"
+          desc="Aquí irá drag & drop de imágenes y assets."
+          pills={["Subir imagen", "Biblioteca", "Recientes"]}
+        />
+      )}
+
+      {tab === "brand" && (
+        <PreviewSection
+          title="Marca"
+          desc="Kit de marca: logos, paletas, tipografías."
+          pills={["Logo", "Paleta", "Tipografías", "Componentes"]}
+        />
+      )}
+
+      {tab === "projects" && (
+        <PreviewSection
+          title="Proyectos"
+          desc="Historial por proyecto / cliente / campaña."
+          pills={["Recientes", "Favoritos", "Compartidos"]}
+        />
+      )}
+
+      {tab === "apps" && (
+        <PreviewSection
+          title="Apps"
+          desc="Mini-apps: QR, mockups, resize batch, etc."
+          pills={["QR", "Mockup", "Resize", "Export pack"]}
+        />
+      )}
     </div>
   );
 }
 
-/* ----------------------------- Templates Panel ----------------------------- */
-
-function TemplatesPanel({ templates, onCreateFromTemplate }) {
+function PreviewSection({ title, desc, pills = [] }) {
   return (
-    <div>
-      <div className="mb-3">
-        <div className="text-white font-semibold">Plantillas</div>
-        <div className="text-white/50 text-xs">Click para iniciar un documento</div>
-      </div>
+    <div className="rounded-[22px] border border-white/10 bg-white/5 p-3">
+      <div className="text-white font-semibold">{title}</div>
+      <div className="text-white/60 text-xs mt-1">{desc}</div>
 
-      <div className="space-y-2">
-        {(templates || []).map((t) => (
-          <button
-            key={t.id}
-            className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-            onClick={() => onCreateFromTemplate(t)}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {pills.map((p) => (
+          <div
+            key={p}
+            className="px-3 py-1.5 rounded-2xl bg-black/25 border border-white/10 text-white/80 text-xs"
           >
-            <div className="text-white font-medium">{t.title}</div>
-            <div className="text-white/60 text-xs">{t.subtitle}</div>
-          </button>
+            {p}
+          </div>
         ))}
       </div>
 
-      <div className="mt-4 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
-        <div className="text-white font-semibold text-sm">Mis diseños</div>
-        <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
+      <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-white/50 text-xs">
+        Preview UI listo ✅ — lógica en el siguiente paso.
       </div>
     </div>
   );
 }
 
-/* ----------------------------- EmptyState ----------------------------- */
+function TextQuickPanel({ hasDoc, doc, onChangeDoc }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-[22px] border border-white/10 bg-white/5 p-3">
+        <div className="text-white/70 text-xs">Texto rápido</div>
+        <div className="text-white/60 text-xs mt-1">Agrega títulos y subtítulos como Canva.</div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2">
+          <button
+            className="w-full px-3 py-3 rounded-[18px] bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm text-left"
+            onClick={() => {
+              if (!hasDoc || !doc) return;
+              const id = uid();
+              onChangeDoc({
+                ...doc,
+                nodes: [
+                  ...doc.nodes,
+                  {
+                    id,
+                    type: "text",
+                    x: 120,
+                    y: 120,
+                    text: "Título impactante",
+                    fontSize: 86,
+                    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
+                    fill: "#E9EEF9",
+                    draggable: true,
+                  },
+                ],
+                selectedId: id,
+              });
+            }}
+          >
+            <div className="text-white font-semibold">Agregar título</div>
+            <div className="text-white/60 text-xs">Grande • Pro</div>
+          </button>
+
+          <button
+            className="w-full px-3 py-3 rounded-[18px] bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm text-left"
+            onClick={() => {
+              if (!hasDoc || !doc) return;
+              const id = uid();
+              onChangeDoc({
+                ...doc,
+                nodes: [
+                  ...doc.nodes,
+                  {
+                    id,
+                    type: "text",
+                    x: 130,
+                    y: 240,
+                    text: "Subtítulo / descripción",
+                    fontSize: 36,
+                    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
+                    fill: "rgba(233,238,249,0.78)",
+                    draggable: true,
+                  },
+                ],
+                selectedId: id,
+              });
+            }}
+          >
+            <div className="text-white font-semibold">Agregar subtítulo</div>
+            <div className="text-white/60 text-xs">Mediano • Legible</div>
+          </button>
+        </div>
+
+        {!hasDoc && (
+          <div className="mt-3 text-white/50 text-xs rounded-2xl border border-white/10 bg-black/20 p-3">
+            Crea una plantilla primero para poder insertar texto.
+          </div>
+        )}
+      </div>
+
+      <PreviewSection title="Estilos" desc="Luego: presets de tipografía (Heading, Subheading…)." pills={["Heading", "Subheading", "Body", "CTA"]} />
+    </div>
+  );
+}
 
 function EmptyState() {
   return (
     <div className="h-full flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
-        <div className="text-white/60 text-sm mt-1">Abre Templates y elige un formato.</div>
+      <div className="text-center px-6">
+        <div className="text-white text-2xl font-semibold tracking-wide">AUREA STUDIO</div>
+        <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
         <div className="text-white/40 text-xs mt-3">
-          Tip: activa <span className="text-white/70">Properties</span> para editar capas y estilos.
+          Tip: Usa <span className="text-white/70">Ctrl/Cmd+I</span> para abrir Propiedades.
         </div>
       </div>
     </div>
   );
 }
 
-/* ----------------------------- Inspector ----------------------------- */
+/* ----------------------------- Floating Window ----------------------------- */
+
+function FloatingWindow({
+  title,
+  subtitle,
+  pos,
+  setPos,
+  dragRef,
+  minimized,
+  onMin,
+  onClose,
+  children,
+}) {
+  const onMouseDown = (e) => {
+    // drag only from header
+    dragRef.current.dragging = true;
+    dragRef.current.dx = e.clientX - pos.x;
+    dragRef.current.dy = e.clientY - pos.y;
+  };
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragRef.current.dragging) return;
+      setPos({
+        x: clamp(e.clientX - dragRef.current.dx, 10, window.innerWidth - 360),
+        y: clamp(e.clientY - dragRef.current.dy, 80, window.innerHeight - 120),
+      });
+    };
+    const onUp = () => {
+      dragRef.current.dragging = false;
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [pos.x, pos.y, setPos, dragRef]);
+
+  return (
+    <div
+      className="absolute z-30"
+      style={{
+        left: pos.x,
+        top: pos.y,
+        width: 360,
+      }}
+    >
+      <div className="rounded-[22px] border border-white/10 bg-black/55 backdrop-blur-xl shadow-[0_30px_110px_rgba(0,0,0,.60)] overflow-hidden">
+        {/* Header */}
+        <div
+          className="px-3 py-3 border-b border-white/10 flex items-center justify-between cursor-grab active:cursor-grabbing"
+          onMouseDown={onMouseDown}
+          title="Arrastra para mover"
+        >
+          <div className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/80 shadow-[0_0_25px_rgba(52,211,153,.35)]" />
+            <div>
+              <div className="text-white font-semibold text-sm">{title}</div>
+              <div className="text-white/50 text-[11px]">{subtitle}</div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={onMin}
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs"
+              title="Minimizar"
+            >
+              {minimized ? "Expandir" : "Min"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs"
+              title="Cerrar"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        {!minimized && <div className="p-3 max-h-[62vh] overflow-auto">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- Inspector (reused) ----------------------------- */
 
 function Inspector({ doc, onChange }) {
   const selected = useMemo(() => {
@@ -559,7 +779,7 @@ function Inspector({ doc, onChange }) {
   return (
     <div className="space-y-3">
       {/* Documento */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+      <div className="rounded-[18px] border border-white/10 bg-white/5 p-3">
         <div className="text-white/70 text-xs">Documento</div>
         <div className="text-white text-sm mt-1">
           {doc.meta.w}×{doc.meta.h}
@@ -567,7 +787,7 @@ function Inspector({ doc, onChange }) {
 
         <div className="mt-2 flex gap-2">
           <button
-            className="px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs"
+            className="px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs border border-white/10"
             onClick={() => {
               const id = uid();
               const next = {
@@ -595,7 +815,7 @@ function Inspector({ doc, onChange }) {
           </button>
 
           <button
-            className="px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs"
+            className="px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs border border-white/10"
             onClick={() => {
               const id = uid();
               const next = {
@@ -624,14 +844,14 @@ function Inspector({ doc, onChange }) {
         </div>
       </div>
 
-      {/* Layers */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+      {/* Capas */}
+      <div className="rounded-[18px] border border-white/10 bg-white/5 p-3">
         <div className="flex items-center justify-between">
           <div className="text-white/70 text-xs">Capas</div>
           <div className="text-white/40 text-[11px]">{doc.nodes.length}</div>
         </div>
 
-        <div className="mt-2 space-y-1 max-h-[240px] overflow-auto pr-1">
+        <div className="mt-2 space-y-1 max-h-[220px] overflow-auto pr-1">
           {doc.nodes.slice().map((n, idx) => {
             const isSel = doc.selectedId === n.id;
             const label =
@@ -656,17 +876,34 @@ function Inspector({ doc, onChange }) {
                   <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
                     {n.type}
                   </span>
-                  <span className="truncate max-w-[170px]">{label}</span>
+                  <span className="truncate max-w-[180px]">{label}</span>
                 </div>
                 <div className="text-[10px] text-white/40">#{idx + 1}</div>
               </button>
             );
           })}
         </div>
+
+        <div className="mt-2 flex gap-2">
+          <button
+            className="flex-1 px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs border border-white/10"
+            onClick={bringToFront}
+            disabled={!selected}
+          >
+            Frente
+          </button>
+          <button
+            className="flex-1 px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs border border-white/10"
+            onClick={sendToBack}
+            disabled={!selected}
+          >
+            Atrás
+          </button>
+        </div>
       </div>
 
       {/* Selección */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+      <div className="rounded-[18px] border border-white/10 bg-white/5 p-3">
         <div className="text-white/70 text-xs">Selección</div>
 
         {!selected ? (
@@ -679,22 +916,7 @@ function Inspector({ doc, onChange }) {
 
             <div className="flex gap-2">
               <button
-                className="flex-1 px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={bringToFront}
-              >
-                Frente
-              </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={sendToBack}
-              >
-                Atrás
-              </button>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs"
+                className="flex-1 px-3 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-xs border border-white/10"
                 onClick={duplicate}
               >
                 Duplicar
@@ -711,7 +933,7 @@ function Inspector({ doc, onChange }) {
               <>
                 <label className="block text-white/60 text-xs mt-2">Texto</label>
                 <input
-                  className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                  className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none"
                   value={selected.text || ""}
                   onChange={(e) => patchSelected({ text: e.target.value })}
                 />
@@ -721,7 +943,7 @@ function Inspector({ doc, onChange }) {
                     <label className="block text-white/60 text-xs">Tamaño</label>
                     <input
                       type="number"
-                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none"
                       value={selected.fontSize || 32}
                       onChange={(e) => patchSelected({ fontSize: Number(e.target.value) || 32 })}
                     />
@@ -730,7 +952,7 @@ function Inspector({ doc, onChange }) {
                   <div>
                     <label className="block text-white/60 text-xs">Color</label>
                     <input
-                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none"
                       value={selected.fill || "#E9EEF9"}
                       onChange={(e) => patchSelected({ fill: e.target.value })}
                     />
@@ -743,7 +965,7 @@ function Inspector({ doc, onChange }) {
               <>
                 <label className="block text-white/60 text-xs mt-2">Color</label>
                 <input
-                  className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                  className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none"
                   value={selected.fill || "#2B3A67"}
                   onChange={(e) => patchSelected({ fill: e.target.value })}
                 />
@@ -753,7 +975,7 @@ function Inspector({ doc, onChange }) {
                     <label className="block text-white/60 text-xs">Radius</label>
                     <input
                       type="number"
-                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none"
                       value={selected.cornerRadius || 0}
                       onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })}
                     />
@@ -763,7 +985,7 @@ function Inspector({ doc, onChange }) {
                     <label className="block text-white/60 text-xs">Rotación</label>
                     <input
                       type="number"
-                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none"
                       value={selected.rotation || 0}
                       onChange={(e) => patchSelected({ rotation: Number(e.target.value) || 0 })}
                     />
