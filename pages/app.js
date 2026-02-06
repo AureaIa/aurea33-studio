@@ -353,30 +353,6 @@ const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
 const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
 
-// ✅ Mobile Drawer (solo móvil)
-const [sidebarOpen, setSidebarOpen] = useState(false);
-
-useEffect(() => {
-  if (!safeIsMobile) {
-    setSidebarOpen(false);
-    document.body.style.overflow = "";
-    return;
-  }
-
-  const onKey = (e) => {
-    if (e.key === "Escape") setSidebarOpen(false);
-  };
-  window.addEventListener("keydown", onKey);
-
-  const prevOverflow = document.body.style.overflow;
-  if (sidebarOpen) document.body.style.overflow = "hidden";
-
-  return () => {
-    window.removeEventListener("keydown", onKey);
-    document.body.style.overflow = prevOverflow;
-  };
-}, [safeIsMobile, sidebarOpen]);
-
 
 
 // -----------------------------
@@ -558,9 +534,6 @@ useEffect(() => setHydrated(true), []);
 
 const safeIsMobile = hydrated ? isMobile : false;
 
-
-
-
 useEffect(() => {
   if (!safeIsMobile) {
     setSidebarOpen(false);
@@ -582,6 +555,7 @@ useEffect(() => {
     document.body.style.overflow = prevOverflow;
   };
 }, [safeIsMobile, sidebarOpen]);
+
 
 // 7) No Scroll crop por ECSS AUREA33
 
