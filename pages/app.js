@@ -63,14 +63,6 @@ function safeSetLS(key, value) {
 }
 
 
-function safeJsonParse(str, fallback) {
-  try {
-    return JSON.parse(str);
-  } catch {
-    return fallback;
-  }
-}
-
 function loadProjectsLS(uid) {
   if (!uid) return null;
   const raw = localStorage.getItem(lsKey(uid));
