@@ -125,6 +125,17 @@ function makeProject(title = "Nuevo proyecto") {
   };
 }
 
+function studioDocKey(uid) {
+  return `aurea33:studio:doc:${uid || "anon"}`;
+}
+
+function safeJsonParse(str, fallback) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
+}
 
 /* ----------------------------- Utilities ----------------------------- */
 
@@ -352,12 +363,47 @@ export default function AppPage() {
 const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
 const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-
+const [studioDoc, setStudioDoc] = useState(null);
 
 
 // -----------------------------
 // Theme (light / dark) ✅ FULL
 // -----------------------------
+
+//🔥 ✅ cargar doc al loguear/cambiar user
+useEffect(() => {
+  const uid = user?.uid;
+  if (!uid) return;
+
+  const raw = localStorage.getItem(studioDocKey(uid));
+  const loaded = safeJsonParse(raw, null);
+
+  if (loaded) setStudioDoc(loaded);
+  else {
+    // doc base vacío si no existe
+    setStudioDoc({
+      version: 1,
+      meta: { title: "Untitled", w: 1080, h: 1080, bg: "#0b1020" },
+      nodes: [],
+    });
+  }
+}, [user?.uid]);
+
+// ✅ persistencia inmediata del doc
+useEffect(() => {
+  const uid = user?.uid;
+  if (!uid || !studioDoc) return;
+  localStorage.setItem(studioDocKey(uid), JSON.stringify(studioDoc));
+}, [user?.uid, studioDoc]);
+
+const STUDIO_TEMPLATES = [
+  { id: "fb_post", name: "Facebook Post", w: 1080, h: 1080, bg: "#0b1020" },
+  { id: "ig_post", name: "Instagram Post", w: 1080, h: 1080, bg: "#0b1020" },
+  { id: "story", name: "Story (IG/FB)", w: 1080, h: 1920, bg: "#0b1020" },
+  { id: "fb_cover", name: "Facebook Cover", w: 1640, h: 624, bg: "#0b1020" },
+  { id: "yt_thumb", name: "YouTube Thumbnail", w: 1280, h: 720, bg: "#0b1020" },
+];
+
 
 // 1) State
 const [theme, setTheme] = useState("dark"); // "light" | "dark"
@@ -1058,6 +1104,26 @@ async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
       setBusy(false);
     }
   }
+
+
+  function newFromTemplate(tpl) {
+  setStudioDoc({
+    version: 1,
+    meta: { title: tpl.name, w: tpl.w, h: tpl.h, bg: tpl.bg },
+    nodes: [],
+  });
+}
+
+function duplicateStudio() {
+  setStudioDoc((prev) => {
+    if (!prev) return prev;
+    return {
+      ...prev,
+      meta: { ...prev.meta, title: `${prev.meta?.title || "Untitled"} (Copy)` },
+      nodes: Array.isArray(prev.nodes) ? [...prev.nodes] : [],
+    };
+  });
+}
 
   /* ----------------------------- Chat ----------------------------- */
 // ✅ Asegúrate de importar getAuthToken desde donde lo tengas
@@ -2357,6 +2423,19 @@ const MobileSidebarContent = SidebarContent;
   const activeDocEntry = studioSafe.docs.find((d) => d.id === studioSafe.meta.activeDocId);
   const canvasDoc = activeDocEntry?.doc;
 
+  const setStudioDoc = (nextDoc) => {
+  const nextStudio = {
+    ...studioSafe,
+    docs: (studioSafe.docs || []).map((d) =>
+      d.id === studioSafe.meta.activeDocId
+        ? { ...d, updatedAt: uidNow(), doc: nextDoc }
+        : d
+    ),
+  };
+  updateProjectTab("studio", nextStudio);
+};
+
+
   const setActiveDoc = (docId) => {
     const nextStudio = {
       ...studioSafe,
@@ -2488,22 +2567,18 @@ const MobileSidebarContent = SidebarContent;
             </div>
 
             <div style={studioCanvasBody()}>
-              <CanvasEditorClient
-                key={`${activeProjectId}:${studioSafe.meta.activeDocId}`}
-                doc={canvasDoc}
-                compact={compact}
-                onChange={(nextDoc) => {
-                  const nextStudio = {
-                    ...studioSafe,
-                    docs: studioSafe.docs.map((d) =>
-                      d.id === studioSafe.meta.activeDocId
-                        ? { ...d, updatedAt: uidNow(), doc: nextDoc }
-                        : d
-                    ),
-                  };
-                  updateProjectTab("studio", nextStudio);
-                }}
-              />
+             
+           <CanvasEditorClient
+  studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
+  onChange={(nextStudio) => {
+    // nextStudio.doc trae el doc actualizado
+    setStudioDoc(nextStudio.doc);
+  }}
+  compact={compact}
+/>
+
+
+
             </div>
           </div>
 

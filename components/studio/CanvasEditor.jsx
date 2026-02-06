@@ -51,7 +51,7 @@ function normalizeDoc(input) {
 },
 
     nodes: Array.isArray(input.nodes) ? input.nodes : [],
-    selectedId: safeStr(input.selectedId, null),
+selectedId: typeof input.selectedId === "string" ? input.selectedId : null,
   };
 }
 
@@ -100,8 +100,16 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
 
 /* ----------------------------- Component ----------------------------- */
 
-export default function CanvasEditor({ studio, onChange, compact = false }) {
-  const externalDoc = studio?.doc || null;
+export default function CanvasEditor({
+  doc,
+  onChange,
+  templates = TEMPLATES,
+  onNewFromTemplate,
+  onDuplicate,
+  compact = false,
+}) {
+  const externalDoc = doc || null;
+
 
   // Local doc (single source for editor)
   const [localDoc, setLocalDoc] = useState(() => normalizeDoc(externalDoc));
@@ -112,10 +120,12 @@ export default function CanvasEditor({ studio, onChange, compact = false }) {
 
   // Keep local doc in sync when studio.doc changes from outside
   useEffect(() => {
-  setLocalDoc(normalizeDoc(externalDoc));
+  const next = normalizeDoc(externalDoc);
+  setLocalDoc(next);
   undoRef.current = [];
   redoRef.current = [];
-}, [studio?.id]); // o studio?.docId
+}, [externalDoc?.meta?.presetKey, externalDoc?.meta?.w, externalDoc?.meta?.h]);
+
 
 
   const hasDoc = !!localDoc;
@@ -127,49 +137,53 @@ export default function CanvasEditor({ studio, onChange, compact = false }) {
    *  -> y alimenta undo/redo con throttling básico
    */
   const commit = useCallback(
-    (nextDoc, opts = {}) => {
-      const normalized = normalizeDoc(nextDoc);
+  (nextDoc, opts = {}) => {
+    const normalized = normalizeDoc(nextDoc);
 
-      setLocalDoc((prev) => {
-        // push undo si no es “silent”
-        if (!opts.silent && prev && normalized) {
-          undoRef.current.push(prev);
-          // limita memoria (pro)
-          if (undoRef.current.length > 80) undoRef.current.shift();
-          // limpiar redo cuando haces un cambio nuevo
-          redoRef.current = [];
-        }
-        return normalized;
-      });
+    if (!normalized) {
+      setLocalDoc(null);
+      onChange?.(null);
+      return;
+    }
 
-      onChange?.({ ...(studio || {}), doc: normalized });
-    },
-    [onChange, studio]
-  );
-
-  const undo = useCallback(() => {
-    const stack = undoRef.current;
-    if (!stack.length) return;
-
-    setLocalDoc((cur) => {
-      if (cur) redoRef.current.push(cur);
-      const prev = stack.pop();
-      onChange?.({ ...(studio || {}), doc: prev });
-      return prev;
+    setLocalDoc((prev) => {
+      if (!opts.silent && prev) {
+        undoRef.current.push(prev);
+        if (undoRef.current.length > 80) undoRef.current.shift();
+        redoRef.current = [];
+      }
+      return normalized;
     });
-  }, [onChange, studio]);
 
-  const redo = useCallback(() => {
-    const stack = redoRef.current;
-    if (!stack.length) return;
+    onChange?.(normalized);
+  },
+  [onChange]
+);
 
-    setLocalDoc((cur) => {
-      if (cur) undoRef.current.push(cur);
-      const next = stack.pop();
-      onChange?.({ ...(studio || {}), doc: next });
-      return next;
-    });
-  }, [onChange, studio]);
+const undo = useCallback(() => {
+  const stack = undoRef.current;
+  if (!stack.length) return;
+
+  setLocalDoc((cur) => {
+    if (cur) redoRef.current.push(cur);
+    const prev = stack.pop();
+    onChange?.(prev);
+    return prev;
+  });
+}, [onChange]);
+
+const redo = useCallback(() => {
+  const stack = redoRef.current;
+  if (!stack.length) return;
+
+  setLocalDoc((cur) => {
+    if (cur) undoRef.current.push(cur);
+    const next = stack.pop();
+    onChange?.(next);
+    return next;
+  });
+}, [onChange]);
+
 
   // Keyboard shortcuts: Ctrl/Cmd+Z / Shift+Z / Y
   useEffect(() => {
@@ -194,24 +208,28 @@ export default function CanvasEditor({ studio, onChange, compact = false }) {
 
   return (
     <div className={`w-full ${shellClass} flex gap-4`}>
+
+        
       {/* ---------------- Left Sidebar ---------------- */}
       <LeftSidebar
-        compact={compact}
-        hasDoc={hasDoc}
-        onReset={() => {
-          // reset completo
-          setLocalDoc(null);
-          undoRef.current = [];
-          redoRef.current = [];
-          onChange?.({ ...(studio || {}), doc: null });
-        }}
-        onCreateFromTemplate={(t) => {
-          const next = makeEmptyDoc(t);
-          undoRef.current = [];
-          redoRef.current = [];
-          commit(next, { silent: true });
-        }}
-      />
+  templates={templates}
+  compact={compact}
+  hasDoc={hasDoc}
+  onReset={() => {
+    setLocalDoc(null);
+    undoRef.current = [];
+    redoRef.current = [];
+    onChange?.(null);
+  }}
+  onCreateFromTemplate={(t) => {
+    const next = makeEmptyDoc(t);
+    undoRef.current = [];
+    redoRef.current = [];
+    commit(next, { silent: true });
+    onNewFromTemplate?.(t);
+
+  }}
+/>
 
       {/* ---------------- Main Canvas Area ---------------- */}
       <div className="flex-1 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden relative">
@@ -258,7 +276,7 @@ export default function CanvasEditor({ studio, onChange, compact = false }) {
 
 /* ----------------------------- Left Sidebar ----------------------------- */
 
-function LeftSidebar({ compact, hasDoc, onReset, onCreateFromTemplate }) {
+function LeftSidebar({ templates, compact, hasDoc, onReset, onCreateFromTemplate }) {
   return (
     <div className="w-[320px] shrink-0 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md p-3">
       <div className="flex items-center justify-between mb-3">
@@ -277,7 +295,7 @@ function LeftSidebar({ compact, hasDoc, onReset, onCreateFromTemplate }) {
       </div>
 
       <div className="space-y-2">
-        {TEMPLATES.map((t) => (
+{(templates || []).map((t) => (
           <button
             key={t.id}
             className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
