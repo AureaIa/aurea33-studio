@@ -511,6 +511,9 @@ const uiBase = useMemo(
   const [searchOpen, setSearchOpen] = useState(false);
   const [queryText, setQueryText] = useState("");
 
+  // ✅ Mobile drawer sidebar (DECLARAR AQUÍ)
+const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Toasts
   const [toasts, setToasts] = useState([]);
 
@@ -777,8 +780,6 @@ useEffect(() => {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [activeProjectId, activeTab, activeProject]);
-
-
 
 
 
