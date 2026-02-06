@@ -29,11 +29,7 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-/** normalizeDoc = “seguro anti-bugs”
- *  - NO deja que w/h regresen a undefined/0
- *  - conserva presetKey si existe
- *  - asegura campos base en meta
- */
+/** normalizeDoc = seguro anti-bugs */
 function normalizeDoc(input) {
   if (!input) return null;
 
@@ -60,15 +56,7 @@ function normalizeDoc(input) {
 
 function makeEmptyDoc({ w, h, bg, presetKey }) {
   return normalizeDoc({
-    meta: {
-      w,
-      h,
-      bg: bg || "#0B1220",
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      presetKey: presetKey || "",
-    },
+    meta: { w, h, bg: bg || "#0B1220", zoom: 1, panX: 0, panY: 0, presetKey: presetKey || "" },
     nodes: [
       {
         id: uid(),
@@ -97,41 +85,25 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
   });
 }
 
-/* ----------------------------- UI helpers ----------------------------- */
+/* ----------------------------- LocalStorage UI ----------------------------- */
 
-function PillButton({ active, children, onClick, title, className = "" }) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      className={[
-        "px-3 py-2 rounded-xl text-xs border transition select-none",
-        "shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md",
-        active
-          ? "bg-emerald-500/12 border-emerald-400/25 text-emerald-100"
-          : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10",
-        className,
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
+const UI_KEY = "aurea33:studio:ui";
+
+function loadUI() {
+  try {
+    const raw = localStorage.getItem(UI_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
-function IconRailButton({ active, label, icon, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        "w-full flex flex-col items-center justify-center gap-2 py-3 rounded-2xl border transition",
-        active ? "bg-white/10 border-white/20" : "bg-black/10 border-white/10 hover:bg-white/5",
-      ].join(" ")}
-      title={label}
-    >
-      <div className="text-white/90 text-lg leading-none">{icon}</div>
-      <div className="text-[11px] text-white/70">{label}</div>
-    </button>
-  );
+function saveUI(patch) {
+  try {
+    const cur = loadUI() || {};
+    localStorage.setItem(UI_KEY, JSON.stringify({ ...cur, ...patch }));
+  } catch {}
 }
 
 /* ----------------------------- Component ----------------------------- */
@@ -153,14 +125,15 @@ export default function CanvasEditor({
   const undoRef = useRef([]);
   const redoRef = useRef([]);
 
-  // NEW: Canva-like navigation
-  const [activeTool, setActiveTool] = useState("design"); // design | elements | text | uploads | brand | apps
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [propsOpen, setPropsOpen] = useState(false); // floating properties panel
-  const [propsMin, setPropsMin] = useState(false);
-  const [zen, setZen] = useState(false);
+  // ✅ UI state (Canva-style)
+  const ui0 = typeof window !== "undefined" ? loadUI() : null;
+  const [leftOpen, setLeftOpen] = useState(ui0?.leftOpen ?? false);
+  const [leftTab, setLeftTab] = useState(ui0?.leftTab ?? "design");
+  const [rightOpen, setRightOpen] = useState(ui0?.rightOpen ?? false);
 
-  // Keep local doc in sync when doc changes from outside
+  useEffect(() => saveUI({ leftOpen, leftTab, rightOpen }), [leftOpen, leftTab, rightOpen]);
+
+  // Sync local doc when doc changes outside
   useEffect(() => {
     const next = normalizeDoc(externalDoc);
     setLocalDoc(next);
@@ -171,7 +144,6 @@ export default function CanvasEditor({
   const hasDoc = !!localDoc;
   const shellClass = compact ? "h-[70vh]" : "h-[78vh]";
 
-  /** commit = normaliza siempre + undo/redo */
   const commit = useCallback(
     (nextDoc, opts = {}) => {
       const normalized = normalizeDoc(nextDoc);
@@ -220,343 +192,189 @@ export default function CanvasEditor({
     });
   }, [onChange]);
 
-  // Keyboard shortcuts:
-  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Y redo, Ctrl/Cmd+Shift+Z redo
-  // Ctrl/Cmd+\ Zen
-  // Ctrl/Cmd+1..4 tools
+  // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (ev) => {
       const isMod = ev.ctrlKey || ev.metaKey;
-      if (!isMod) return;
 
-      const k = ev.key.toLowerCase();
+      // Undo/Redo
+      if (isMod) {
+        const k = ev.key.toLowerCase();
+        if (k === "z" && !ev.shiftKey) {
+          ev.preventDefault();
+          undo();
+          return;
+        }
+        if ((k === "z" && ev.shiftKey) || k === "y") {
+          ev.preventDefault();
+          redo();
+          return;
+        }
+      }
 
-      if (k === "z" && !ev.shiftKey) {
+      // Panels
+      if (isMod && ev.key === "1") {
         ev.preventDefault();
-        undo();
-        return;
+        openLeft("design");
       }
-      if ((k === "z" && ev.shiftKey) || k === "y") {
+      if (isMod && ev.key === "2") {
         ev.preventDefault();
-        redo();
-        return;
+        openLeft("elements");
       }
-      if (ev.key === "\\") {
+      if (isMod && ev.key === "3") {
         ev.preventDefault();
-        setZen((v) => !v);
-        return;
+        openLeft("text");
       }
-      if (k === "1") {
+      if (isMod && (ev.key.toLowerCase() === "p")) {
         ev.preventDefault();
-        setLeftOpen(true);
-        setActiveTool("design");
-        return;
+        setRightOpen((s) => !s);
       }
-      if (k === "2") {
-        ev.preventDefault();
-        setLeftOpen(true);
-        setActiveTool("elements");
-        return;
-      }
-      if (k === "3") {
-        ev.preventDefault();
-        setLeftOpen(true);
-        setActiveTool("text");
-        return;
-      }
-      if (k === "4") {
-        ev.preventDefault();
-        setPropsOpen(true);
-        setPropsMin(false);
-        return;
+
+      if (ev.key === "Escape") {
+        setLeftOpen(false);
+        setRightOpen(false);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [undo, redo]);
 
-  /* ----------------------------- Layout ----------------------------- */
+  const openLeft = (tab) => {
+    setLeftTab(tab);
+    setLeftOpen(true);
+  };
+
+  const closeLeft = () => setLeftOpen(false);
+
+  const addText = () => {
+    if (!localDoc) return;
+    const id = uid();
+    commit({
+      ...localDoc,
+      nodes: [
+        ...localDoc.nodes,
+        {
+          id,
+          type: "text",
+          x: 120,
+          y: 120,
+          text: "Texto nuevo",
+          fontSize: 44,
+          fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
+          fill: "#E9EEF9",
+          draggable: true,
+        },
+      ],
+      selectedId: id,
+    });
+  };
+
+  const addShape = () => {
+    if (!localDoc) return;
+    const id = uid();
+    commit({
+      ...localDoc,
+      nodes: [
+        ...localDoc.nodes,
+        { id, type: "rect", x: 140, y: 180, width: 320, height: 180, fill: "#2B3A67", cornerRadius: 24, draggable: true },
+      ],
+      selectedId: id,
+    });
+  };
 
   return (
-    <div className={`w-full ${shellClass} flex gap-4`}>
-      {/* LEFT: Icon Rail + Panel (Canva-like) */}
-      {!zen && (
-        <div className="flex gap-3">
-          {/* Rail */}
-          <div className="w-[88px] shrink-0 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md p-2">
-            <div className="space-y-2">
-              <IconRailButton
-                active={activeTool === "design"}
-                label="Diseño"
-                icon="▦"
-                onClick={() => {
-                  setActiveTool("design");
-                  setLeftOpen(true);
-                }}
-              />
-              <IconRailButton
-                active={activeTool === "elements"}
-                label="Elementos"
-                icon="⬡"
-                onClick={() => {
-                  setActiveTool("elements");
-                  setLeftOpen(true);
-                }}
-              />
-              <IconRailButton
-                active={activeTool === "text"}
-                label="Texto"
-                icon="T"
-                onClick={() => {
-                  setActiveTool("text");
-                  setLeftOpen(true);
-                }}
-              />
-              <IconRailButton
-                active={activeTool === "uploads"}
-                label="Subidos"
-                icon="⇪"
-                onClick={() => {
-                  setActiveTool("uploads");
-                  setLeftOpen(true);
-                }}
-              />
-              <IconRailButton
-                active={activeTool === "brand"}
-                label="Marca"
-                icon="♥"
-                onClick={() => {
-                  setActiveTool("brand");
-                  setLeftOpen(true);
-                }}
-              />
-              <IconRailButton
-                active={activeTool === "apps"}
-                label="Apps"
-                icon="⌁"
-                onClick={() => {
-                  setActiveTool("apps");
-                  setLeftOpen(true);
-                }}
-              />
-              <div className="h-px bg-white/10 my-2" />
-              <IconRailButton
-                active={propsOpen}
-                label="Props"
-                icon="⚙"
-                onClick={() => {
-                  setPropsOpen(true);
-                  setPropsMin(false);
-                }}
-              />
-            </div>
+    <div className={`w-full ${shellClass} relative`}>
+      <div className="w-full h-full flex gap-3">
+        {/* -------- Left Dock (siempre visible) -------- */}
+        <LeftDock
+          active={leftOpen ? leftTab : null}
+          onPick={(tab) => {
+            if (leftOpen && leftTab === tab) closeLeft();
+            else openLeft(tab);
+          }}
+        />
 
-            <div className="mt-3">
-              <PillButton
-                active={leftOpen}
-                onClick={() => setLeftOpen((v) => !v)}
-                title="Mostrar/Ocultar panel izquierdo"
-                className="w-full justify-center"
-              >
-                {leftOpen ? "Ocultar" : "Panel"}
-              </PillButton>
-            </div>
-          </div>
+        {/* -------- Left Drawer (retraíble) -------- */}
+        {leftOpen && (
+          <LeftDrawer
+            tab={leftTab}
+            templates={templates}
+            hasDoc={hasDoc}
+            onClose={closeLeft}
+            onReset={() => {
+              setLocalDoc(null);
+              undoRef.current = [];
+              redoRef.current = [];
+              onChange?.(null);
+              closeLeft();
+            }}
+            onCreateFromTemplate={(t) => {
+              const next = makeEmptyDoc(t);
+              undoRef.current = [];
+              redoRef.current = [];
+              commit(next, { silent: true });
+              onNewFromTemplate?.(t);
+              closeLeft(); // opcional: cierra al elegir
+            }}
+            onAddText={addText}
+            onAddShape={addShape}
+          />
+        )}
 
-          {/* Panel */}
-          {leftOpen && (
-            <div className="w-[340px] shrink-0 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md p-3">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="text-white font-semibold">
-                    {activeTool === "design" && "Plantillas"}
-                    {activeTool === "elements" && "Elementos"}
-                    {activeTool === "text" && "Texto"}
-                    {activeTool === "uploads" && "Subidos"}
-                    {activeTool === "brand" && "Marca"}
-                    {activeTool === "apps" && "Apps"}
-                  </div>
-                  <div className="text-white/50 text-xs">
-                    {activeTool === "design" && "Elige un formato para iniciar"}
-                    {activeTool !== "design" && "Preview UI (funciones en camino)"}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                    onClick={() => {
-                      setLocalDoc(null);
-                      undoRef.current = [];
-                      redoRef.current = [];
-                      onChange?.(null);
-                    }}
-                    title="Reset documento"
-                  >
-                    Reset
-                  </button>
-
-                  <button
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs"
-                    onClick={() => {
-                      setPropsOpen(true);
-                      setPropsMin(false);
-                    }}
-                    title="Abrir Propiedades"
-                  >
-                    Propiedades
-                  </button>
-                </div>
-              </div>
-
-              {/* DESIGN */}
-              {activeTool === "design" && (
-                <div className="space-y-2">
-                  {(templates || []).map((t) => (
-                    <button
-                      key={t.id}
-                      className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                      onClick={() => {
-                        const next = makeEmptyDoc(t);
-                        undoRef.current = [];
-                        redoRef.current = [];
-                        commit(next, { silent: true });
-                        onNewFromTemplate?.(t);
-                      }}
-                    >
-                      <div className="text-white font-medium">{t.title}</div>
-                      <div className="text-white/60 text-xs">{t.subtitle}</div>
-                    </button>
-                  ))}
-
-                  <div className="mt-4 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
-                    <div className="text-white font-semibold text-sm">Mis diseños</div>
-                    <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
-                    <div className="mt-3 text-white/40 text-[11px]">
-                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+\\</span> Zen
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ELEMENTS (preview UI) */}
-              {activeTool === "elements" && (
-                <div className="space-y-2">
-                  <PreviewCard title="Formas" desc="Cuadros, círculos, líneas, stickers (próximamente)" />
-                  <PreviewCard title="Íconos" desc="Pack premium de íconos (próximamente)" />
-                  <PreviewCard title="Frames" desc="Marcos para fotos y promos (próximamente)" />
-                  <PreviewCard title="Decoración" desc="HUD, glow, partículas (próximamente)" />
-                </div>
-              )}
-
-              {/* TEXT (preview UI) */}
-              {activeTool === "text" && (
-                <div className="space-y-2">
-                  <button
-                    className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                    onClick={() => {
-                      if (!hasDoc) return;
-                      const id = uid();
-                      const next = {
-                        ...localDoc,
-                        nodes: [
-                          ...localDoc.nodes,
-                          {
-                            id,
-                            type: "text",
-                            x: 120,
-                            y: 120,
-                            text: "Texto nuevo",
-                            fontSize: 44,
-                            fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
-                            fill: "#E9EEF9",
-                            draggable: true,
-                          },
-                        ],
-                        selectedId: id,
-                      };
-                      commit(next);
-                    }}
-                  >
-                    <div className="text-white font-medium">+ Agregar texto</div>
-                    <div className="text-white/60 text-xs">Crea un bloque de texto editable</div>
-                  </button>
-
-                  <PreviewCard title="Estilos" desc="Titulares, subtítulos, presets (próximamente)" />
-                </div>
-              )}
-
-              {/* UPLOADS (preview UI) */}
-              {activeTool === "uploads" && (
-                <div className="space-y-2">
-                  <PreviewCard title="Subir imagen" desc="Drag & drop + librería (próximamente)" />
-                  <PreviewCard title="Mis assets" desc="Por proyecto/cliente (próximamente)" />
-                </div>
-              )}
-
-              {/* BRAND (preview UI) */}
-              {activeTool === "brand" && (
-                <div className="space-y-2">
-                  <PreviewCard title="Kit de marca" desc="Colores, logos, fuentes (próximamente)" />
-                  <PreviewCard title="Presets Aurea" desc="Oro/negro premium (próximamente)" />
-                </div>
-              )}
-
-              {/* APPS (preview UI) */}
-              {activeTool === "apps" && (
-                <div className="space-y-2">
-                  <PreviewCard title="Generar layout IA" desc="Auto-layout + grids (próximamente)" />
-                  <PreviewCard title="Remove BG" desc="Quitar fondo en 1 click (próximamente)" />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* MAIN CANVAS */}
-      <div className="flex-1 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden relative">
-        {/* Top HUD (hide in Zen) */}
-        {!zen && (
-          <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
+        {/* -------- Main Canvas Area (FULL) -------- */}
+        <div className="flex-1 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden relative">
+          {/* HUD TOP (premium, compacto) */}
+          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
             <div className="pointer-events-auto flex items-center gap-2">
-              <PillButton onClick={undo} title="Undo (Ctrl/Cmd+Z)">
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+                onClick={undo}
+                disabled={!undoRef.current.length}
+                title="Undo (Ctrl/Cmd+Z)"
+              >
                 Undo
-              </PillButton>
-              <PillButton onClick={redo} title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)">
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+                onClick={redo}
+                disabled={!redoRef.current.length}
+                title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
+              >
                 Redo
-              </PillButton>
+              </button>
 
               <div className="w-px h-7 bg-white/10 mx-1" />
 
-              <PillButton
-                active={zen}
-                onClick={() => setZen((v) => !v)}
-                title="Zen (Ctrl/Cmd+\\)"
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={() => openLeft("design")}
+                title="Diseño (Ctrl/Cmd+1)"
               >
-                Zen
-              </PillButton>
-
-              <PillButton
-                onClick={() => setLeftOpen((v) => !v)}
-                title="Mostrar/Ocultar panel izquierdo"
+                Diseño
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={() => openLeft("elements")}
+                title="Elementos (Ctrl/Cmd+2)"
               >
-                {leftOpen ? "Ocultar panel" : "Mostrar panel"}
-              </PillButton>
+                Elementos
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={() => openLeft("text")}
+                title="Texto (Ctrl/Cmd+3)"
+              >
+                Texto
+              </button>
 
-              <PillButton
-                active={propsOpen}
-                onClick={() => {
-                  setPropsOpen(true);
-                  setPropsMin(false);
-                }}
-                title="Abrir Propiedades (Ctrl/Cmd+4)"
+              <button
+                className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs"
+                onClick={() => setRightOpen(true)}
+                title="Propiedades (Ctrl/Cmd+P)"
               >
                 Propiedades
-              </PillButton>
+              </button>
             </div>
 
             {hasDoc ? (
@@ -565,60 +383,196 @@ export default function CanvasEditor({
               </div>
             ) : null}
           </div>
-        )}
 
-        {!hasDoc ? (
-          <EmptyState />
-        ) : (
-          <StudioCanvas doc={localDoc} onChange={commit} compact={compact || zen} />
-        )}
+          {!hasDoc ? (
+            <EmptyState />
+          ) : (
+            <StudioCanvas doc={localDoc} onChange={commit} compact={compact} />
+          )}
 
-        {/* FLOATING PROPERTIES PANEL */}
-        {propsOpen && !zen && (
-          <div className="absolute right-4 top-16 z-20 w-[340px]">
-            <div className="rounded-2xl border border-white/10 bg-black/45 backdrop-blur-xl shadow-[0_22px_70px_rgba(0,0,0,.55)] overflow-hidden">
-              {/* header */}
-              <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/5">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-                  <div className="text-white/90 text-sm font-semibold">Propiedades</div>
-                  <div className="text-white/40 text-[11px]">Editar capas y estilos</div>
-                </div>
+          {/* Right Drawer (flotante) */}
+          {rightOpen && (
+            <RightDrawer
+              doc={localDoc}
+              onClose={() => setRightOpen(false)}
+              onUndo={undo}
+              onRedo={redo}
+              onChange={commit}
+              onAddText={addText}
+              onAddShape={addShape}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-                <div className="flex items-center gap-2">
-                  <button
-                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[11px]"
-                    onClick={() => setPropsMin((v) => !v)}
-                    title="Minimizar"
-                  >
-                    {propsMin ? "Max" : "Min"}
-                  </button>
-                  <button
-                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[11px]"
-                    onClick={() => setPropsOpen(false)}
-                    title="Cerrar"
-                  >
-                    ✕
-                  </button>
-                </div>
+/* ----------------------------- Left Dock ----------------------------- */
+
+function DockBtn({ active, label, icon, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-2 rounded-2xl border transition ${
+        active
+          ? "bg-amber-400/10 border-amber-300/30 text-white"
+          : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+      }`}
+      title={label}
+    >
+      <span className="w-7 h-7 rounded-xl bg-black/30 border border-white/10 grid place-items-center text-[12px]">
+        {icon}
+      </span>
+      <span className="text-xs">{label}</span>
+    </button>
+  );
+}
+
+function LeftDock({ active, onPick }) {
+  return (
+    <div className="w-[86px] shrink-0 rounded-2xl border border-white/10 bg-black/25 backdrop-blur-md p-2 flex flex-col gap-2">
+      <DockBtn active={active === "design"} label="Diseño" icon="▦" onClick={() => onPick("design")} />
+      <DockBtn active={active === "elements"} label="Elementos" icon="⬡" onClick={() => onPick("elements")} />
+      <DockBtn active={active === "text"} label="Texto" icon="T" onClick={() => onPick("text")} />
+      <DockBtn active={active === "uploads"} label="Subidos" icon="⇪" onClick={() => onPick("uploads")} />
+      <DockBtn active={active === "brand"} label="Marca" icon="♥" onClick={() => onPick("brand")} />
+      <DockBtn active={active === "apps"} label="Apps" icon="⌁" onClick={() => onPick("apps")} />
+      <div className="mt-auto pt-2 border-t border-white/10">
+        <div className="text-[10px] text-white/35 text-center">AUREA</div>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- Left Drawer ----------------------------- */
+
+function LeftDrawer({ tab, templates, hasDoc, onClose, onReset, onCreateFromTemplate, onAddText, onAddShape }) {
+  return (
+    <div className="w-[340px] shrink-0 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md overflow-hidden">
+      <div className="p-3 flex items-center justify-between border-b border-white/10">
+        <div>
+          <div className="text-white font-semibold">
+            {tab === "design" ? "Plantillas" :
+             tab === "elements" ? "Elementos" :
+             tab === "text" ? "Texto" :
+             tab === "uploads" ? "Subidos" :
+             tab === "brand" ? "Marca" :
+             tab === "apps" ? "Apps" : "Panel"}
+          </div>
+          <div className="text-white/45 text-xs">Esc (cerrar) • Ctrl/Cmd+1/2/3</div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
+            onClick={onReset}
+            title="Reset"
+          >
+            Reset
+          </button>
+          <button
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
+            onClick={onClose}
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div className="p-3">
+        {tab === "design" && (
+          <div className="space-y-2">
+            {(templates || []).map((t) => (
+              <button
+                key={t.id}
+                className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
+                onClick={() => onCreateFromTemplate(t)}
+              >
+                <div className="text-white font-medium">{t.title}</div>
+                <div className="text-white/60 text-xs">{t.subtitle}</div>
+              </button>
+            ))}
+
+            <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
+              <div className="text-white font-semibold text-sm">Mis diseños</div>
+              <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
+              <div className="mt-2 text-white/40 text-[11px]">
+                Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
+                <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+                <span className="text-white/60">Ctrl/Cmd+P</span> Propiedades
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* body */}
-              {!propsMin && (
-                <div className="p-3">
-                  {!localDoc ? (
-                    <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div>
-                  ) : (
-                    <Inspector doc={localDoc} onChange={commit} />
-                  )}
-                </div>
-              )}
+        {tab === "elements" && (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="text-white/70 text-xs">Acciones rápidas</div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={onAddShape}>
+                  + Shape
+                </button>
+                <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={onAddText}>
+                  + Texto
+                </button>
+              </div>
+            </div>
 
-              {propsMin && (
-                <div className="p-3 text-white/60 text-sm">
-                  Panel minimizado. (Click “Max” para abrir)
-                </div>
-              )}
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="text-white/70 text-xs">Próximamente</div>
+              <div className="text-white/50 text-sm mt-1">
+                Íconos, stickers, figuras, mockups, elementos de marca, imágenes IA.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "text" && (
+          <div className="space-y-3">
+            <button
+              className="w-full px-3 py-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-sm"
+              onClick={onAddText}
+              disabled={!hasDoc}
+              title={!hasDoc ? "Crea un documento primero" : "Agregar texto"}
+            >
+              Agregar texto
+            </button>
+
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="text-white/70 text-xs">Próximamente</div>
+              <div className="text-white/50 text-sm mt-1">
+                Presets: título, subtítulo, cuerpo, tipografías premium, estilos AUREA.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "uploads" && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-white/70 text-xs">Subidos</div>
+            <div className="text-white/50 text-sm mt-1">
+              (Preview) Aquí va upload de imágenes/PNG/SVG + librería por proyecto.
+            </div>
+          </div>
+        )}
+
+        {tab === "brand" && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-white/70 text-xs">Marca</div>
+            <div className="text-white/50 text-sm mt-1">
+              (Preview) Logos, colores, tipografías, kits por cliente.
+            </div>
+          </div>
+        )}
+
+        {tab === "apps" && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-white/70 text-xs">Apps</div>
+            <div className="text-white/50 text-sm mt-1">
+              (Preview) Herramientas futuras: remover fondo, mockups, QR, generador IA.
             </div>
           </div>
         )}
@@ -627,16 +581,58 @@ export default function CanvasEditor({
   );
 }
 
-/* ----------------------------- Small Components ----------------------------- */
+/* ----------------------------- Right Drawer (Inspector flotante) ----------------------------- */
 
-function PreviewCard({ title, desc }) {
+function RightDrawer({ doc, onClose, onUndo, onRedo, onChange, onAddText, onAddShape }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="text-white font-medium">{title}</div>
-      <div className="text-white/55 text-xs mt-1">{desc}</div>
+    <div className="absolute top-3 right-3 bottom-3 w-[340px] z-30 pointer-events-auto">
+      <div className="h-full rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,.55)]">
+        <div className="p-3 flex items-center justify-between border-b border-white/10">
+          <div>
+            <div className="text-white font-semibold">Propiedades</div>
+            <div className="text-white/45 text-xs">Ctrl/Cmd+P • Esc</div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[11px]"
+              onClick={onUndo}
+              title="Undo"
+            >
+              ⟲
+            </button>
+            <button
+              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[11px]"
+              onClick={onRedo}
+              title="Redo"
+            >
+              ⟳
+            </button>
+            <button
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
+              onClick={onClose}
+              title="Cerrar"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="p-3">
+          {!doc ? (
+            <div className="text-white/50 text-sm">
+              Crea un documento para editar propiedades.
+            </div>
+          ) : (
+            <Inspector doc={doc} onChange={onChange} onAddText={onAddText} onAddShape={onAddShape} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+/* ----------------------------- EmptyState ----------------------------- */
 
 function EmptyState() {
   return (
@@ -644,7 +640,7 @@ function EmptyState() {
       <div className="text-center">
         <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
         <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
-        <div className="text-white/35 text-xs mt-2">Atajo: Ctrl/Cmd+\\ Zen</div>
+        <div className="text-white/40 text-[11px] mt-2">Atajo: Ctrl/Cmd+1</div>
       </div>
     </div>
   );
@@ -652,16 +648,14 @@ function EmptyState() {
 
 /* ----------------------------- Inspector ----------------------------- */
 
-function Inspector({ doc, onChange }) {
+function Inspector({ doc, onChange, onAddText, onAddShape }) {
   const selected = useMemo(() => {
     if (!doc?.selectedId) return null;
     return doc.nodes.find((n) => n.id === doc.selectedId) || null;
   }, [doc]);
 
   const patchDoc = useCallback(
-    (patch) => {
-      onChange({ ...doc, ...patch });
-    },
+    (patch) => onChange({ ...doc, ...patch }),
     [doc, onChange]
   );
 
@@ -709,56 +703,13 @@ function Inspector({ doc, onChange }) {
         <div className="mt-2 flex gap-2">
           <button
             className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-            onClick={() => {
-              const id = uid();
-              const next = {
-                ...doc,
-                nodes: [
-                  ...doc.nodes,
-                  {
-                    id,
-                    type: "text",
-                    x: 120,
-                    y: 120,
-                    text: "Texto nuevo",
-                    fontSize: 44,
-                    fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
-                    fill: "#E9EEF9",
-                    draggable: true,
-                  },
-                ],
-                selectedId: id,
-              };
-              onChange(next);
-            }}
+            onClick={onAddText}
           >
             + Texto
           </button>
-
           <button
             className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-            onClick={() => {
-              const id = uid();
-              const next = {
-                ...doc,
-                nodes: [
-                  ...doc.nodes,
-                  {
-                    id,
-                    type: "rect",
-                    x: 140,
-                    y: 180,
-                    width: 320,
-                    height: 180,
-                    fill: "#2B3A67",
-                    cornerRadius: 24,
-                    draggable: true,
-                  },
-                ],
-                selectedId: id,
-              };
-              onChange(next);
-            }}
+            onClick={onAddShape}
           >
             + Shape
           </button>
@@ -776,11 +727,8 @@ function Inspector({ doc, onChange }) {
           {doc.nodes.slice().map((n, idx) => {
             const isSel = doc.selectedId === n.id;
             const label =
-              n.type === "text"
-                ? (n.text || "Texto").slice(0, 18)
-                : n.type === "rect"
-                ? "Shape"
-                : n.type;
+              n.type === "text" ? (n.text || "Texto").slice(0, 18) :
+              n.type === "rect" ? "Shape" : n.type;
 
             return (
               <button
@@ -819,25 +767,16 @@ function Inspector({ doc, onChange }) {
             </div>
 
             <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={bringToFront}
-              >
+              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={bringToFront}>
                 Frente
               </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={sendToBack}
-              >
+              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={sendToBack}>
                 Atrás
               </button>
             </div>
 
             <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={duplicate}
-              >
+              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={duplicate}>
                 Duplicar
               </button>
               <button
