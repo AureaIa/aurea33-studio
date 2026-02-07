@@ -315,8 +315,13 @@ export default function CanvasEditor({
 
   /* ----------------------------- Layout ----------------------------- */
 
+  
   return (
-    <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
+  <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
+    <AureaFXStyles />
+
+    {/* ======== TOP HUD (mini) ======== */}
+    
       {/* ======== TOP HUD (mini) ======== */}
       <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2">
@@ -923,21 +928,21 @@ function GlowButton({
       : "aurea-glow-soft";
 
   return (
-    <button
-      {...props}
-      disabled={disabled}
-      className={`relative isolate overflow-hidden rounded-xl border px-3 py-2 text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md transition
+  <button
+    {...props}
+    disabled={disabled}
+    className={`group relative isolate overflow-hidden rounded-xl border px-3 py-2 text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md transition
       ${disabled ? "opacity-50 cursor-not-allowed" : "hover:scale-[1.01] active:scale-[0.99]"}
       ${v} ${className}`}
-    >
-      {/* Orbit / border light */}
-      <span className="pointer-events-none absolute inset-0 rounded-xl aurea-orbit-border" />
-      {/* Soft glow wash */}
-      <span className="pointer-events-none absolute -inset-10 aurea-glow-wash" />
-      {/* Content */}
-      <span className="relative z-10">{children}</span>
-    </button>
-  );
+  >
+    {/* Orbit / border light */}
+    <span className="pointer-events-none absolute inset-0 rounded-xl aurea-orbit-border opacity-0 group-hover:opacity-100 transition" />
+    {/* Soft glow wash */}
+    <span className="pointer-events-none absolute -inset-10 aurea-glow-wash" />
+    {/* Content */}
+    <span className="relative z-10">{children}</span>
+  </button>
+);
 }
 
 /* ----------------------------- Premium FX: global CSS ----------------------------- */
@@ -972,7 +977,7 @@ function AureaFXStyles() {
         position: absolute;
         inset: 0;
         border-radius: inherit;
-        padding: 1px; /* grosor del borde */
+        padding: 2px; /* grosor del borde */
         background: conic-gradient(
           from var(--aurea-rot, 0deg),
           rgba(255, 215, 100, 0) 0deg,
@@ -987,7 +992,7 @@ function AureaFXStyles() {
         -webkit-mask-composite: xor;
         mask-composite: exclude;
 
-        filter: drop-shadow(0 0 12px rgba(255, 215, 100, 0.35));
+        filter: drop-shadow(0 0 18px rgba(255, 215, 100, 0.55));
         opacity: 0.9;
         animation: aurea-rotate 2.2s linear infinite;
       }
