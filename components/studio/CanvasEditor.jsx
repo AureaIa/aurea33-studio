@@ -972,8 +972,16 @@ function AureaFXStyles() {
       }
 
       /* ======= Orbit border (punto/luz recorriendo contorno) ======= */
+      /* Permite animar custom properties en Chrome/Edge */
+@property --aurea-rot {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
       .aurea-orbit-border::before {
         content: "";
+        animation: none;
         position: absolute;
         inset: 0;
         border-radius: inherit;
@@ -984,6 +992,7 @@ function AureaFXStyles() {
           rgba(255, 215, 100, 0) 280deg,
           rgba(255, 215, 100, 0.95) 320deg,
           rgba(255, 215, 100, 0) 360deg
+          .group:hover .aurea-orbit-border::before { animation: aurea-rotate 1.1s linear infinite;}
         );
 
         /* Mostrar sólo borde */
