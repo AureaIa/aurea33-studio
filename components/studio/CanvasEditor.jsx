@@ -954,6 +954,45 @@ function AureaFXStyles() {
         background: rgba(255, 255, 255, 0.04);
         border-color: rgba(255, 255, 255, 0.10);
         color: rgba(255, 255, 255, 0.92);
+
+        @property --aurea-rot {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.aurea-orbit-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--aurea-rot),
+    rgba(255, 215, 100, 0) 0deg,
+    rgba(255, 215, 100, 0) 280deg,
+    rgba(255, 215, 100, 0.95) 320deg,
+    rgba(255, 215, 100, 0) 360deg
+  );
+
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+
+  filter: drop-shadow(0 0 18px rgba(255, 215, 100, 0.55));
+  opacity: 0.9;
+  animation: none;
+}
+
+.group:hover .aurea-orbit-border::before {
+  animation: aurea-rotate 1.4s linear infinite;
+}
+
+@keyframes aurea-rotate {
+  0% { --aurea-rot: 0deg; }
+  100% { --aurea-rot: 360deg; }
+}
+
       }
       .aurea-glow-amber {
         background: rgba(245, 158, 11, 0.10);
@@ -987,11 +1026,11 @@ function AureaFXStyles() {
         border-radius: inherit;
         padding: 2px; /* grosor del borde */
         background: conic-gradient(
-          from var(--aurea-rot, 0deg),
-          rgba(255, 215, 100, 0) 0deg,
-          rgba(255, 215, 100, 0) 280deg,
-          rgba(255, 215, 100, 0.95) 320deg,
-          rgba(255, 215, 100, 0) 360deg
+  from var(--aurea-rot),
+  rgba(255,215,100,0) 0deg,
+  rgba(255,215,100,0) 330deg,
+  rgba(255,215,100,1) 345deg,
+  rgba(255,215,100,0) 360deg
           .group:hover .aurea-orbit-border::before { animation: aurea-rotate 1.1s linear infinite;}
         );
 
