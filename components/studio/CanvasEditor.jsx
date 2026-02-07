@@ -192,7 +192,11 @@ export default function CanvasEditor({
         redo();
       } else if (k === "\\") {
         ev.preventDefault();
-        setZen((v) => !v);
+        setZen(v => {
+  const next = !v;
+  if (next) { setLeftOpen(false); setRightOpen(false); }
+  return next;
+});
       }
     };
 
@@ -326,7 +330,7 @@ export default function CanvasEditor({
       </div>
 
       {/* ======== MAIN STAGE WRAP ======== */}
-      <div className="absolute inset-0 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden">
+<div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
         {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
         {!zen && (
           <div className="absolute left-3 top-16 bottom-3 z-20 w-[64px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
@@ -591,7 +595,7 @@ export default function CanvasEditor({
               </div>
             </div>
           ) : (
-            <StudioCanvas doc={localDoc} onChange={commit} compact={compact} />
+<StudioCanvas doc={localDoc} onChange={commit} compact={true} />
           )}
         </div>
       </div>
