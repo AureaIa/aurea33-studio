@@ -18,6 +18,7 @@ const DEFAULT_FORMATS = FORMATS;
 
 /* ----------------------------- Utils ----------------------------- */
 
+
 function uid() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -118,6 +119,7 @@ export default function CanvasEditor({
 }) {
   const externalDoc = doc || null;
 
+  
   /* ----------------------------- Templates Marketplace State ----------------------------- */
 
   const [marketTemplates, setMarketTemplates] = useState([]);
@@ -318,52 +320,30 @@ export default function CanvasEditor({
       {/* ======== TOP HUD (mini) ======== */}
       <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={undo}
-            disabled={!undoRef.current.length}
-            title="Undo (Ctrl/Cmd+Z)"
-          >
-            Undo
-          </button>
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={redo}
-            disabled={!redoRef.current.length}
-            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
-          >
-            Redo
-          </button>
+         <GlowButton onClick={undo} disabled={!undoRef.current.length} title="Undo (Ctrl/Cmd+Z)">
+  Undo
+</GlowButton>
 
-          <div className="w-px h-7 bg-white/10 mx-1" />
+<GlowButton onClick={redo} disabled={!redoRef.current.length} title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)">
+  Redo
+</GlowButton>
 
-          <button
-            className={`px-3 py-2 rounded-xl border text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md ${
-              zen
-                ? "bg-amber-500/20 border-amber-400/30 hover:bg-amber-500/30"
-                : "bg-white/5 border-white/10 hover:bg-white/10"
-            }`}
-            onClick={() => setZen((v) => !v)}
-            title="Zen (Ctrl/Cmd+\)"
-          >
-            ZEN
-          </button>
+<GlowButton
+  onClick={() => setZen((v) => !v)}
+  title="Zen (Ctrl/Cmd+\)"
+  variant={zen ? "amber" : "soft"}
+>
+  ZEN
+</GlowButton>
 
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={() => setLeftOpen((v) => !v)}
-            title="Mostrar/Ocultar panel izquierdo"
-          >
-            {leftOpen ? "Ocultar panel" : "Panel"}
-          </button>
+<GlowButton onClick={() => setLeftOpen((v) => !v)} title="Mostrar/Ocultar panel izquierdo">
+  {leftOpen ? "Ocultar panel" : "Panel"}
+</GlowButton>
 
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={() => setRightOpen((v) => !v)}
-            title="Mostrar/Ocultar inspector"
-          >
-            {rightOpen ? "Ocultar inspector" : "Inspector"}
-          </button>
+<GlowButton onClick={() => setRightOpen((v) => !v)} title="Mostrar/Ocultar inspector">
+  {rightOpen ? "Ocultar inspector" : "Inspector"}
+</GlowButton>
+
         </div>
 
         {hasDoc ? (
@@ -479,7 +459,7 @@ export default function CanvasEditor({
               ) : null}
 
               {/*🔥🔥🔥🔥🔥🔥🔥🔥 DESIGN: templates 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥*/}
-              
+
              {activeTool === "design" && (
   <div className="space-y-3">
     {/* Header tipo Canva */}
@@ -537,7 +517,8 @@ export default function CanvasEditor({
         {filteredMarket.map((t) => (
           <button
             key={t.id}
-            className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left"
+className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left
+hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
             onClick={() => {
               // 🔥 aquí aún NO aplicamos doc (eso es el Paso 3)
               // por ahora solo vamos a verificar que renderiza bonito
@@ -549,7 +530,7 @@ export default function CanvasEditor({
               <img
                 src={t.preview || "/templates/previews/demo.jpg"}
                 alt={t.title}
-                className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
+                className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-300 group-hover:scale-[1.04]"
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
@@ -731,15 +712,18 @@ function DockBtn({ label, icon, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-[44px] h-[44px] rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition
-      ${active ? "bg-amber-500/20 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}`}
+      className={`relative w-[44px] h-[44px] rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition overflow-hidden
+      ${active ? "bg-amber-500/15 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}
+      hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      <div className="text-sm leading-none">{icon}</div>
-      <div className="text-[9px] leading-none">{label}</div>
+      {active ? <span className="pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border" /> : null}
+      <div className="relative z-10 text-sm leading-none">{icon}</div>
+      <div className="relative z-10 text-[9px] leading-none">{label}</div>
     </button>
   );
 }
+
 
 /* ----------------------------- Inspector Mini ----------------------------- */
 
@@ -918,5 +902,121 @@ function InspectorMini({ doc, onChange }) {
         )}
       </div>
     </div>
+  );
+}
+/* ----------------------------- Premium FX: GlowButton ----------------------------- */
+
+function GlowButton({
+  children,
+  className = "",
+  variant = "soft", // soft | amber | danger | sky
+  disabled = false,
+  ...props
+}) {
+  const v =
+    variant === "amber"
+      ? "aurea-glow-amber"
+      : variant === "danger"
+      ? "aurea-glow-danger"
+      : variant === "sky"
+      ? "aurea-glow-sky"
+      : "aurea-glow-soft";
+
+  return (
+    <button
+      {...props}
+      disabled={disabled}
+      className={`relative isolate overflow-hidden rounded-xl border px-3 py-2 text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md transition
+      ${disabled ? "opacity-50 cursor-not-allowed" : "hover:scale-[1.01] active:scale-[0.99]"}
+      ${v} ${className}`}
+    >
+      {/* Orbit / border light */}
+      <span className="pointer-events-none absolute inset-0 rounded-xl aurea-orbit-border" />
+      {/* Soft glow wash */}
+      <span className="pointer-events-none absolute -inset-10 aurea-glow-wash" />
+      {/* Content */}
+      <span className="relative z-10">{children}</span>
+    </button>
+  );
+}
+
+/* ----------------------------- Premium FX: global CSS ----------------------------- */
+/** Pegado dentro del mismo archivo para no tocar globals.css */
+function AureaFXStyles() {
+  return (
+    <style jsx global>{`
+      .aurea-glow-soft {
+        background: rgba(255, 255, 255, 0.04);
+        border-color: rgba(255, 255, 255, 0.10);
+        color: rgba(255, 255, 255, 0.92);
+      }
+      .aurea-glow-amber {
+        background: rgba(245, 158, 11, 0.10);
+        border-color: rgba(245, 158, 11, 0.25);
+        color: rgba(255, 255, 255, 0.95);
+      }
+      .aurea-glow-sky {
+        background: rgba(56, 189, 248, 0.10);
+        border-color: rgba(56, 189, 248, 0.25);
+        color: rgba(255, 255, 255, 0.95);
+      }
+      .aurea-glow-danger {
+        background: rgba(239, 68, 68, 0.12);
+        border-color: rgba(239, 68, 68, 0.28);
+        color: rgba(255, 255, 255, 0.95);
+      }
+
+      /* ======= Orbit border (punto/luz recorriendo contorno) ======= */
+      .aurea-orbit-border::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1px; /* grosor del borde */
+        background: conic-gradient(
+          from var(--aurea-rot, 0deg),
+          rgba(255, 215, 100, 0) 0deg,
+          rgba(255, 215, 100, 0) 280deg,
+          rgba(255, 215, 100, 0.95) 320deg,
+          rgba(255, 215, 100, 0) 360deg
+        );
+
+        /* Mostrar sólo borde */
+        -webkit-mask: linear-gradient(#000 0 0) content-box,
+          linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+
+        filter: drop-shadow(0 0 12px rgba(255, 215, 100, 0.35));
+        opacity: 0.9;
+        animation: aurea-rotate 2.2s linear infinite;
+      }
+
+      .aurea-glow-wash {
+        background: radial-gradient(
+          circle at 20% 0%,
+          rgba(255, 215, 100, 0.18),
+          rgba(0, 0, 0, 0) 55%
+        );
+        opacity: 0.6;
+        transform: translateZ(0);
+      }
+
+      @keyframes aurea-rotate {
+        0% {
+          --aurea-rot: 0deg;
+        }
+        100% {
+          --aurea-rot: 360deg;
+        }
+      }
+
+      /* reduce motion */
+      @media (prefers-reduced-motion: reduce) {
+        .aurea-orbit-border::before {
+          animation: none !important;
+        }
+      }
+    `}</style>
   );
 }
