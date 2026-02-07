@@ -1066,25 +1066,7 @@ async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
   }
 
 
-  function newFromTemplate(tpl) {
-  setStudioDoc({
-    version: 1,
-    meta: { title: tpl.name, w: tpl.w, h: tpl.h, bg: tpl.bg },
-    nodes: [],
-  });
-}
-
-function duplicateStudio() {
-  setStudioDoc((prev) => {
-    if (!prev) return prev;
-    return {
-      ...prev,
-      meta: { ...prev.meta, title: `${prev.meta?.title || "Untitled"} (Copy)` },
-      nodes: Array.isArray(prev.nodes) ? [...prev.nodes] : [],
-    };
-  });
-}
-
+ 
   /* ----------------------------- Chat ----------------------------- */
 // ✅ Asegúrate de importar getAuthToken desde donde lo tengas
 // Ejemplo:
@@ -2379,226 +2361,41 @@ const MobileSidebarContent = SidebarContent;
 
               {/* STUDIO */}
              {/*🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥 STUDIO (🔥 Firefly-style Shell 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥) */}
+{/* STUDIO (LIMPIO: toda UI vive en CanvasEditor.jsx / StudioCanvas.jsx) */}
 {activeTab === "studio" && (() => {
   const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
-  const activeDocEntry = studioSafe.docs.find((d) => d.id === studioSafe.meta.activeDocId);
+  const activeDocEntry = (studioSafe.docs || []).find(
+    (d) => d.id === studioSafe.meta.activeDocId
+  );
   const canvasDoc = activeDocEntry?.doc;
 
+  // Guarda el doc del canvas en el proyecto activo
   const setCanvasDoc = (nextDoc) => {
-  const nextStudio = {
-    ...studioSafe,
-    docs: (studioSafe.docs || []).map((d) =>
-      d.id === studioSafe.meta.activeDocId
-        ? { ...d, updatedAt: uidNow(), doc: nextDoc }
-        : d
-    ),
-  };
-  updateProjectTab("studio", nextStudio);
-};
-
-
-
-  const setActiveDoc = (docId) => {
     const nextStudio = {
       ...studioSafe,
-      meta: { ...(studioSafe.meta || {}), activeDocId: docId },
+      docs: (studioSafe.docs || []).map((d) =>
+        d.id === studioSafe.meta.activeDocId
+          ? { ...d, updatedAt: uidNow(), doc: nextDoc }
+          : d
+      ),
     };
     updateProjectTab("studio", nextStudio);
-  };
-
-  const createNewCanvasDoc = () => {
-    const next = makeStudioDoc(`Doc ${studioSafe.docs.length + 1}`);
-    const nextStudio = {
-      ...studioSafe,
-      meta: { ...(studioSafe.meta || {}), activeDocId: next.id },
-      docs: [next, ...(studioSafe.docs || [])],
-    };
-    updateProjectTab("studio", nextStudio);
-    toast("Studio", "Nuevo canvas creado", "ok");
   };
 
   return (
-    <div style={studioShellWrap()}>
-      {/* Sub-topbar interno (la “UI dentro de UI”) */}
-      <div style={studioSubTopbar()}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={studioBadge()}>AUREA CANVA</div>
-          <div style={{ fontWeight: 900, letterSpacing: 0.2, opacity: 0.95 }}>
-            {activeDocEntry?.title || "Canvas"}
-          </div>
-          <div style={studioPillSoft()}>
-            {canvasDoc?.meta?.w || 1080}×{canvasDoc?.meta?.h || 1080}
-          </div>
-          <div style={studioPillSoft()}>
-            Zoom: {Math.round((canvasDoc?.meta?.zoom || 1) * 100)}%
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button style={studioGhostBtn()} onClick={createNewCanvasDoc}>
-            + Nuevo doc
-          </button>
-
-          <button
-            style={studioGhostBtn()}
-            onClick={() => toast("Pro tip", "Hoy solo estética. Mañana metemos plantillas pro 🔥", "warn")}
-          >
-            Plantillas
-          </button>
-
-          <button style={studioPrimaryBtn()} onClick={() => toast("Export", "Próximo: PNG / PDF / SVG", "ok")}>
-            Exportar
-          </button>
-        </div>
-      </div>
-
-      {/* Grid tipo Firefly */}
-      <div style={studioGrid(safeIsMobile)}>
-        {/* LEFT RAIL */}
-        {!safeIsMobile && (
-          <aside style={studioLeftRail()}>
-            <div style={studioRailTitle()}>Plantillas</div>
-
-            <div style={studioTemplateList()}>
-              {[
-                { t: "Post IG 1080", d: "Minimal • Premium" },
-                { t: "Historia 1080×1920", d: "Story • Clean" },
-                { t: "Portada FB", d: "Pro • Impacto" },
-                { t: "Banner Web", d: "Hero • Modern" },
-              ].map((x) => (
-                <div key={x.t} style={studioTemplateCard()}>
-                  <div style={{ fontWeight: 900 }}>{x.t}</div>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>{x.d}</div>
-                  <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-                    <button
-                      style={studioMiniBtn()}
-                      onClick={() => toast("Template", "Luego conectamos inserción real al canvas 👑", "ok")}
-                    >
-                      Usar
-                    </button>
-                    <button style={studioMiniBtnSoft()} onClick={() => toast("Preview", "Preview pronto", "warn")}>
-                      Preview
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={studioRailSep()} />
-
-            <div style={studioRailTitle()}>Documentos</div>
-            <div style={{ display: "grid", gap: 8 }}>
-              {(studioSafe.docs || []).slice(0, 10).map((d) => {
-                const active = d.id === studioSafe.meta.activeDocId;
-                return (
-                  <button
-                    key={d.id}
-                    onClick={() => setActiveDoc(d.id)}
-                    style={studioDocBtn(active)}
-                    title={d.title}
-                  >
-                    <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {active ? "🎯 " : ""}{d.title}
-                    </div>
-                    <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
-                      {new Date(d.updatedAt || d.createdAt).toLocaleString()}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-        )}
-
-        {/* CANVAS FRAME (la joya visual) */}
-        <section style={studioCanvasZone()}>
-          <div style={studioCanvasFrame()}>
-            <div style={studioCanvasHeader()}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div style={studioDot("gold")} />
-                <div style={studioDot("blue")} />
-                <div style={studioDot("gray")} />
-                <div style={{ fontWeight: 900, opacity: 0.85 }}>Canvas</div>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={studioTinyTag()}>Snap</span>
-                <span style={studioTinyTag()}>Grid</span>
-                <span style={studioTinyTag()}>Safe</span>
-              </div>
-            </div>
-
-            <div style={studioCanvasBody()}>
-             
-           <CanvasEditorClient
-  studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
-  onChange={(nextStudio) => {
-    setCanvasDoc(nextStudio.doc);
-  }}
-  compact={compact}
-/>
-
-
-
-
-            </div>
-          </div>
-
-          {/* “Prompt bar” fake (solo estética hoy) */}
-          <div style={studioPromptBar()}>
-            <div style={{ opacity: 0.75, fontWeight: 900 }}>Describe lo que quieres diseñar:</div>
-            <div style={studioPromptFakeInput()}>
-              “Portada FB futurista, fondo oscuro, texto dorado, estilo Aurea33…”
-            </div>
-            <button style={studioPrimaryBtn()} onClick={() => toast("Soon", "Próximo: generación de layouts con IA 👑", "ok")}>
-              Generar layout
-            </button>
-          </div>
-        </section>
-
-        {/* RIGHT RAIL */}
-        {!safeIsMobile && (
-          <aside style={studioRightRail()}>
-            <div style={studioRailTitle()}>Propiedades</div>
-
-            <div style={studioPropCard()}>
-              <div style={studioPropLabel()}>Selección</div>
-              <div style={studioPropValue()}>{canvasDoc?.selectedId || "—"}</div>
-            </div>
-
-            <div style={studioPropCard()}>
-              <div style={studioPropLabel()}>Documento</div>
-              <div style={studioPropValue()}>
-                Fondo: {canvasDoc?.meta?.bg || "#0B1220"}
-              </div>
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <button style={studioGhostBtn()} onClick={() => toast("Soon", "Próximo: cambiar tamaño", "warn")}>
-                  Cambiar tamaño
-                </button>
-                <button style={studioGhostBtn()} onClick={() => toast("Soon", "Próximo: export PNG", "warn")}>
-                  Export PNG
-                </button>
-                <button style={studioGhostBtn()} onClick={() => toast("Soon", "Próximo: capas pro", "warn")}>
-                  Capas
-                </button>
-              </div>
-            </div>
-
-            <div style={studioPropCard()}>
-              <div style={studioPropLabel()}>AUREA Tips</div>
-              <div style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.4 }}>
-                Hoy: estética Firefly. <br />
-                Próximo: templates reales, drag & drop, grids, snapping, export, presets por red social.
-              </div>
-            </div>
-          </aside>
-        )}
-      </div>
+    <div style={studioCleanWrap()}>
+      <CanvasEditorClient
+        studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
+        onChange={(nextStudio) => {
+          // CanvasEditor te manda {id, doc} o similar
+          // Nosotros persistimos SOLO el doc
+          if (nextStudio?.doc) setCanvasDoc(nextStudio.doc);
+        }}
+        compact={compact}
+      />
     </div>
   );
 })()}
-
-
 
 
               {/* CODE */}
@@ -3608,6 +3405,22 @@ function chatArea(compact) {
   };
 }
 
+function studioCleanWrap() {
+  return {
+    flex: 1,
+    minHeight: 0,
+    height: "100%",
+    width: "100%",
+    overflow: "hidden",
+    borderRadius: 0,      // ✅ sin “recuadro”
+    border: "none",       // ✅ sin “recuadro”
+    background: "transparent",
+    padding: 0,
+    margin: 0,
+  };
+}
+
+
 
 function pinsWrap() {
   return {
@@ -3838,336 +3651,7 @@ function btnPrimaryLink() {
     fontSize: 12,
   };
 }
-/* -------------🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥  AUREA STUDIO — Firefly Shell 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥----------------------------- */
-/* ============================
-   AUREA STUDIO — Firefly Shell
-   (solo UI, no lógica)
-============================ */
 
-function studioShellWrap() {
-  return {
-    height: "100%",
-    minHeight: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  };
-}
-
-function studioSubTopbar() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
-    boxShadow: "0 18px 60px rgba(0,0,0,0.35)",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backdropFilter: "blur(12px)",
-  };
-}
-
-function studioGrid(isMobile) {
-  return {
-    flex: 1,
-    minHeight: 0,
-    display: "grid",
-    gridTemplateColumns: isMobile ? "1fr" : "300px 1fr 320px",
-    gap: 12,
-    alignItems: "stretch",
-    overflow: "hidden",
-  };
-}
-
-function studioLeftRail() {
-  return {
-    minHeight: 0,
-    overflow: "auto",
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background:
-      "radial-gradient(800px 300px at 40% 0%, rgba(247,198,0,0.10), transparent 55%), rgba(0,0,0,0.22)",
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
-    padding: 12,
-    backdropFilter: "blur(12px)",
-  };
-}
-
-function studioRightRail() {
-  return {
-    minHeight: 0,
-    overflow: "auto",
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background:
-      "radial-gradient(700px 280px at 60% 0%, rgba(47,107,255,0.10), transparent 55%), rgba(0,0,0,0.22)",
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.02)",
-    padding: 12,
-    backdropFilter: "blur(12px)",
-  };
-}
-
-function studioCanvasZone() {
-  return {
-    minHeight: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    overflow: "hidden",
-  };
-}
-
-function studioCanvasFrame() {
-  return {
-    flex: 1,
-    minHeight: 0,
-    borderRadius: 22,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background:
-      "radial-gradient(1000px 460px at 50% 0%, rgba(247,198,0,0.12), transparent 55%), rgba(0,0,0,0.25)",
-    boxShadow:
-      "0 24px 90px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.03)",
-    overflow: "hidden",
-    display: "flex",
-    flexDirection: "column",
-  };
-}
-
-function studioCanvasHeader() {
-  return {
-    padding: "10px 12px",
-    borderBottom: "1px solid rgba(255,255,255,0.08)",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    background: "rgba(0,0,0,0.20)",
-    backdropFilter: "blur(12px)",
-  };
-}
-
-function studioCanvasBody() {
-  return {
-    flex: 1,
-    minHeight: 0,
-    position: "relative",
-  };
-}
-
-function studioPromptBar() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.03)",
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    boxShadow: "0 18px 60px rgba(0,0,0,0.35)",
-    backdropFilter: "blur(12px)",
-  };
-}
-
-function studioPromptFakeInput() {
-  return {
-    flex: 1,
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-    color: "var(--text)",
-    opacity: 0.92,
-    fontWeight: 900,
-    overflow: "hidden",
-    whiteSpace: "nowrap",
-    textOverflow: "ellipsis",
-    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.04)",
-  };
-}
-
-function studioBadge() {
-  return {
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid var(--gold-stroke)",
-    background: "var(--gold-soft)",
-    color: "var(--gold)",
-    fontWeight: 950,
-    letterSpacing: 0.4,
-    boxShadow: "0 0 26px rgba(247,198,0,0.10)",
-  };
-}
-
-function studioPillSoft() {
-  return {
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-    color: "var(--text)",
-    fontWeight: 950,
-    opacity: 0.92,
-  };
-}
-
-function studioGhostBtn() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 999,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-3)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 950,
-    fontSize: 12,
-    boxShadow: "var(--shadow-soft)",
-  };
-}
-
-function studioPrimaryBtn() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 999,
-    border: "none",
-    background: "var(--gold)",
-    color: "#111",
-    cursor: "pointer",
-    fontWeight: 950,
-    fontSize: 12,
-    boxShadow: "0 18px 60px rgba(247,198,0,0.18)",
-  };
-}
-
-function studioRailTitle() {
-  return {
-    fontWeight: 950,
-    opacity: 0.9,
-    marginBottom: 10,
-    letterSpacing: 0.2,
-    color: "var(--text)",
-  };
-}
-
-function studioRailSep() {
-  return {
-    height: 1,
-    background: "var(--stroke-soft)",
-    margin: "12px 0",
-  };
-}
-
-function studioTemplateList() {
-  return {
-    display: "grid",
-    gap: 10,
-    marginBottom: 8,
-  };
-}
-
-function studioTemplateCard() {
-  return {
-    padding: 12,
-    borderRadius: 16,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-1)",
-    boxShadow: "var(--shadow-soft)",
-  };
-}
-
-function studioMiniBtn() {
-  return {
-    padding: "7px 10px",
-    borderRadius: 999,
-    border: "1px solid var(--gold-stroke)",
-    background: "var(--gold-soft)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 950,
-    fontSize: 12,
-  };
-}
-
-function studioMiniBtnSoft() {
-  return {
-    padding: "7px 10px",
-    borderRadius: 999,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-3)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 950,
-    fontSize: 12,
-    opacity: 0.92,
-  };
-}
-
-function studioDocBtn(active) {
-  return {
-    width: "100%",
-    textAlign: "left",
-    padding: 12,
-    borderRadius: 16,
-    border: active ? "1px solid var(--gold-stroke)" : "1px solid var(--stroke-soft)",
-    background: active ? "var(--gold-soft)" : "var(--surface-2)",
-    cursor: "pointer",
-    color: "var(--text)",
-    boxShadow: active ? "0 10px 40px rgba(247,198,0,0.10)" : "var(--shadow-soft)",
-  };
-}
-
-function studioTinyTag() {
-  return {
-    padding: "4px 8px",
-    borderRadius: 999,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-    color: "var(--text)",
-    fontSize: 11,
-    fontWeight: 950,
-    opacity: 0.85,
-  };
-}
-
-function studioDot(kind) {
-  const c =
-    kind === "gold"
-      ? "rgba(247,198,0,0.9)"
-      : kind === "blue"
-      ? "rgba(47,107,255,0.9)"
-      : "rgba(160,160,160,0.35)";
-  return {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    background: c,
-    boxShadow: `0 0 18px ${c}`,
-    opacity: 0.9,
-  };
-}
-
-function studioPropCard() {
-  return {
-    padding: 12,
-    borderRadius: 16,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-1)",
-    marginTop: 10,
-    boxShadow: "var(--shadow-soft)",
-  };
-}
-
-function studioPropLabel() {
-  return { fontSize: 11, opacity: 0.7, fontWeight: 950, color: "var(--text)" };
-}
-
-function studioPropValue() {
-  return { marginTop: 6, fontWeight: 950, opacity: 0.92, color: "var(--text)" };
-}
-
-
-
-/* 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥  FINAL USER INTERFACE AUREA STUDIO — Firefly Shell 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥----------------------------- */
 
 /* ----------------------------- HUD / Inspector Panels ----------------------------- */
 
