@@ -1,796 +1,327 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import StudioCanvas from "./StudioCanvas";
 
-/* ----------------------------- Plantillas ----------------------------- */
-
-const TEMPLATES = [
-  { id: "ig-post", title: "Instagram Post", subtitle: "1080×1080", w: 1080, h: 1080, bg: "#0B1220", presetKey: "ig_post" },
-  { id: "ig-story", title: "Instagram Story", subtitle: "1080×1920", w: 1080, h: 1920, bg: "#0B1220", presetKey: "ig_story" },
-  { id: "fb-cover", title: "Facebook Cover", subtitle: "820×312", w: 820, h: 312, bg: "#0B1220", presetKey: "fb_cover" },
-];
-
-/* ----------------------------- Utils ----------------------------- */
-
-function uid() {
-  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function safeNum(x, fallback) {
-  return typeof x === "number" && Number.isFinite(x) ? x : fallback;
-}
-
-function safeStr(x, fallback) {
-  return typeof x === "string" && x.length ? x : fallback;
-}
-
-function clamp(v, min, max) {
-  return Math.max(min, Math.min(max, v));
-}
-
-/** normalizeDoc = seguro anti-bugs */
-function normalizeDoc(input) {
-  if (!input) return null;
-
-  const meta = input.meta || {};
-  const w = Math.max(64, safeNum(meta.w, 1080));
-  const h = Math.max(64, safeNum(meta.h, 1080));
-
-  return {
-    ...input,
-    meta: {
-      ...meta,
-      w,
-      h,
-      bg: safeStr(meta.bg, "#0B1220"),
-      zoom: clamp(safeNum(meta.zoom, 1), 0.1, 4),
-      panX: safeNum(meta.panX, 0),
-      panY: safeNum(meta.panY, 0),
-      presetKey: safeStr(meta.presetKey, ""),
-    },
-    nodes: Array.isArray(input.nodes) ? input.nodes : [],
-    selectedId: typeof input.selectedId === "string" ? input.selectedId : null,
-  };
-}
-
-function makeEmptyDoc({ w, h, bg, presetKey }) {
-  return normalizeDoc({
-    meta: {
-      w,
-      h,
-      bg: bg || "#0B1220",
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      presetKey: presetKey || "",
-    },
-    nodes: [
-      {
-        id: uid(),
-        type: "text",
-        x: 80,
-        y: 90,
-        text: "AUREA 33 STUDIO",
-        fontSize: 72,
-        fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
-        fill: "#E9EEF9",
-        draggable: true,
-      },
-      {
-        id: uid(),
-        type: "text",
-        x: 84,
-        y: 180,
-        text: "Canvas PRO (modo Canva)",
-        fontSize: 34,
-        fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
-        fill: "rgba(233,238,249,0.78)",
-        draggable: true,
-      },
-    ],
-    selectedId: null,
-  });
-}
-
-/* ----------------------------- Component ----------------------------- */
-
-export default function CanvasEditor({
-  doc,
-  onChange,
-  templates = TEMPLATES,
-  onNewFromTemplate,
-  compact = false,
-}) {
-  const externalDoc = doc || null;
-
-  // Local doc (single source for editor)
-  const [localDoc, setLocalDoc] = useState(() => normalizeDoc(externalDoc));
-
-  // Undo/Redo stacks
-  const undoRef = useRef([]);
-  const redoRef = useRef([]);
-
-  // Panels (Canva-like)
-  const [activeTool, setActiveTool] = useState("design"); // design | elements | text | uploads | brand | apps
+/**
+ * CanvasEditor
+ * - Rail (iconos) estilo Canva
+ * - Panel izquierdo flotante (Design/Elements/Text/Uploads/Brand/Apps)
+ * - Inspector flotante derecho (Propiedades)
+ * - Zen mode: oculta TODO para dejar pantalla enorme
+ *
+ * Props esperadas:
+ *  - doc: documento del canvas (meta/nodes/selectedId)
+ *  - onChange: (nextDoc)=>void
+ */
+export default function CanvasEditor({ doc, onChange }) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [zen, setZen] = useState(false);
+  const [activeTool, setActiveTool] = useState("design"); // design|elements|text|uploads|brand|apps
 
-  // Keep local doc in sync when studio.doc changes from outside
+  const toggleZen = useCallback(() => {
+    setZen((v) => !v);
+    // cuando entras a zen, oculta ambos
+    setLeftOpen(false);
+    setRightOpen(false);
+  }, []);
+
+  // Hotkeys
   useEffect(() => {
-    const next = normalizeDoc(externalDoc);
-    setLocalDoc(next);
-    undoRef.current = [];
-    redoRef.current = [];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalDoc?.meta?.presetKey, externalDoc?.meta?.w, externalDoc?.meta?.h]);
+    const onKeyDown = (e) => {
+      const isMod = e.metaKey || e.ctrlKey;
 
-  const hasDoc = !!localDoc;
-
-  const commit = useCallback(
-    (nextDoc, opts = {}) => {
-      const normalized = normalizeDoc(nextDoc);
-
-      if (!normalized) {
-        setLocalDoc(null);
-        onChange?.(null);
-        return;
+      // Ctrl/Cmd + \  -> toggle panel izquierdo
+      if (isMod && e.key === "\\") {
+        e.preventDefault();
+        setLeftOpen((v) => !v);
       }
 
-      setLocalDoc((prev) => {
-        if (!opts.silent && prev) {
-          undoRef.current.push(prev);
-          if (undoRef.current.length > 80) undoRef.current.shift();
-          redoRef.current = [];
-        }
-        return normalized;
-      });
+      // Ctrl/Cmd + i -> toggle inspector
+      if (isMod && (e.key === "i" || e.key === "I")) {
+        e.preventDefault();
+        setRightOpen((v) => !v);
+      }
 
-      onChange?.(normalized);
-    },
-    [onChange]
-  );
-
-  const undo = useCallback(() => {
-    const stack = undoRef.current;
-    if (!stack.length) return;
-
-    setLocalDoc((cur) => {
-      if (cur) redoRef.current.push(cur);
-      const prev = stack.pop();
-      onChange?.(prev);
-      return prev;
-    });
-  }, [onChange]);
-
-  const redo = useCallback(() => {
-    const stack = redoRef.current;
-    if (!stack.length) return;
-
-    setLocalDoc((cur) => {
-      if (cur) undoRef.current.push(cur);
-      const next = stack.pop();
-      onChange?.(next);
-      return next;
-    });
-  }, [onChange]);
-
-  // Keyboard shortcuts: Ctrl/Cmd+Z / Shift+Z / Y + Zen (Ctrl/Cmd+\)
-  useEffect(() => {
-    const onKeyDown = (ev) => {
-      const isMod = ev.ctrlKey || ev.metaKey;
-      if (!isMod) return;
-
-      const k = ev.key.toLowerCase();
-
-      if (k === "z" && !ev.shiftKey) {
-        ev.preventDefault();
-        undo();
-      } else if ((k === "z" && ev.shiftKey) || k === "y") {
-        ev.preventDefault();
-        redo();
-      } else if (k === "\\") {
-        ev.preventDefault();
-        setZen((v) => !v);
+      // Z -> Zen (si no estás escribiendo)
+      if (!isMod && (e.key === "z" || e.key === "Z")) {
+        const el = document.activeElement;
+        const tag = (el?.tagName || "").toLowerCase();
+        const inputLike = tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable;
+        if (!inputLike) toggleZen();
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, { passive: false });
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo]);
+  }, [toggleZen]);
 
-  /* ----------------------------- Actions ----------------------------- */
-
-  const createFromTemplate = (t) => {
-    const next = makeEmptyDoc(t);
-    undoRef.current = [];
-    redoRef.current = [];
-    commit(next, { silent: true });
-    onNewFromTemplate?.(t);
-  };
-
-  const resetDoc = () => {
-    setLocalDoc(null);
-    undoRef.current = [];
-    redoRef.current = [];
-    onChange?.(null);
-  };
-
-  const addText = () => {
-    if (!localDoc) return;
-    const id = uid();
-    commit({
-      ...localDoc,
-      nodes: [
-        ...localDoc.nodes,
-        {
-          id,
-          type: "text",
-          x: 120,
-          y: 120,
-          text: "Texto nuevo",
-          fontSize: 44,
-          fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
-          fill: "#E9EEF9",
-          draggable: true,
-        },
-      ],
-      selectedId: id,
-    });
-  };
-
-  const addShape = () => {
-    if (!localDoc) return;
-    const id = uid();
-    commit({
-      ...localDoc,
-      nodes: [
-        ...localDoc.nodes,
-        {
-          id,
-          type: "rect",
-          x: 140,
-          y: 180,
-          width: 320,
-          height: 180,
-          fill: "#2B3A67",
-          cornerRadius: 24,
-          draggable: true,
-        },
-      ],
-      selectedId: id,
-    });
-  };
-
-  /* ----------------------------- Layout ----------------------------- */
+  const selectedId = doc?.selectedId || null;
+  const selectedNode = useMemo(() => {
+    if (!selectedId) return null;
+    return (doc?.nodes || []).find((n) => n.id === selectedId) || null;
+  }, [doc?.nodes, selectedId]);
 
   return (
-    <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
-      {/* ======== TOP HUD (mini) ======== */}
-      <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={undo}
-            disabled={!undoRef.current.length}
-            title="Undo (Ctrl/Cmd+Z)"
-          >
-            Undo
-          </button>
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={redo}
-            disabled={!redoRef.current.length}
-            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
-          >
-            Redo
-          </button>
+    <div className="w-full h-full relative overflow-hidden rounded-2xl border border-white/10 bg-[#0B1220]">
+      {/* Top micro header (se va en ZEN) */}
+      {!zen && (
+        <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-auto">
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+              onClick={() => setLeftOpen((v) => !v)}
+              title="Panel (Ctrl/Cmd+\)"
+            >
+              Panel
+            </button>
+            <button
+              className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+              onClick={() => setRightOpen((v) => !v)}
+              title="Inspector (Ctrl/Cmd+I)"
+            >
+              Inspector
+            </button>
+            <button
+              className="px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-400/20 hover:bg-amber-500/25 text-amber-100 text-xs"
+              onClick={toggleZen}
+              title="Zen (Z)"
+            >
+              ZEN
+            </button>
 
-          <div className="w-px h-7 bg-white/10 mx-1" />
+            <div className="ml-2 hidden lg:flex items-center gap-2 text-[11px] text-white/50">
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Z = Zen</span>
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Ctrl/Cmd+\ = Panel</span>
+              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Ctrl/Cmd+I = Inspector</span>
+            </div>
+          </div>
 
-          <button
-            className={`px-3 py-2 rounded-xl border text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md ${
-              zen
-                ? "bg-amber-500/20 border-amber-400/30 hover:bg-amber-500/30"
-                : "bg-white/5 border-white/10 hover:bg-white/10"
-            }`}
-            onClick={() => setZen((v) => !v)}
-            title="Zen (Ctrl/Cmd+\)"
-          >
-            ZEN
-          </button>
-
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={() => setLeftOpen((v) => !v)}
-            title="Mostrar/Ocultar panel izquierdo"
-          >
-            {leftOpen ? "Ocultar panel" : "Panel"}
-          </button>
-
-          <button
-            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-            onClick={() => setRightOpen((v) => !v)}
-            title="Mostrar/Ocultar inspector"
-          >
-            {rightOpen ? "Ocultar inspector" : "Inspector"}
-          </button>
+          <div className="text-white/60 text-xs px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+            AUREA CANVAS • {doc?.meta?.w || 1080}×{doc?.meta?.h || 1080}
+          </div>
         </div>
+      )}
 
-        {hasDoc ? (
-          <div className="pointer-events-none text-white/70 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-            {localDoc.meta.w}×{localDoc.meta.h} • zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
-          </div>
-        ) : null}
-      </div>
+      {/* Rail vertical estilo Canva (se va en ZEN) */}
+      {!zen && (
+        <div className="absolute left-3 top-16 bottom-3 z-30 w-[64px] rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.45)] flex flex-col items-center py-2 gap-2">
+          <RailBtn label="Diseño" active={activeTool === "design"} onClick={() => { setActiveTool("design"); setLeftOpen(true); }} />
+          <RailBtn label="Elementos" active={activeTool === "elements"} onClick={() => { setActiveTool("elements"); setLeftOpen(true); }} />
+          <RailBtn label="Texto" active={activeTool === "text"} onClick={() => { setActiveTool("text"); setLeftOpen(true); }} />
+          <RailBtn label="Subidos" active={activeTool === "uploads"} onClick={() => { setActiveTool("uploads"); setLeftOpen(true); }} />
+          <RailBtn label="Marca" active={activeTool === "brand"} onClick={() => { setActiveTool("brand"); setLeftOpen(true); }} />
+          <div className="flex-1" />
+          <RailBtn label="Apps" active={activeTool === "apps"} onClick={() => { setActiveTool("apps"); setLeftOpen(true); }} />
+        </div>
+      )}
 
-      {/* ======== MAIN STAGE WRAP ======== */}
-      <div className="absolute inset-0 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden">
-        {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
-        {!zen && (
-          <div className="absolute left-3 top-16 bottom-3 z-20 w-[64px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
-            <DockBtn
-              label="Diseño"
-              active={activeTool === "design"}
-              onClick={() => {
-                setActiveTool("design");
-                setLeftOpen(true);
-              }}
-              icon="▦"
-            />
-            <DockBtn
-              label="Elementos"
-              active={activeTool === "elements"}
-              onClick={() => {
-                setActiveTool("elements");
-                setLeftOpen(true);
-              }}
-              icon="⬡"
-            />
-            <DockBtn
-              label="Texto"
-              active={activeTool === "text"}
-              onClick={() => {
-                setActiveTool("text");
-                setLeftOpen(true);
-              }}
-              icon="T"
-            />
-            <DockBtn
-              label="Subidos"
-              active={activeTool === "uploads"}
-              onClick={() => {
-                setActiveTool("uploads");
-                setLeftOpen(true);
-              }}
-              icon="⇪"
-            />
-            <DockBtn
-              label="Marca"
-              active={activeTool === "brand"}
-              onClick={() => {
-                setActiveTool("brand");
-                setLeftOpen(true);
-              }}
-              icon="♥"
-            />
-            <DockBtn
-              label="Apps"
-              active={activeTool === "apps"}
-              onClick={() => {
-                setActiveTool("apps");
-                setLeftOpen(true);
-              }}
-              icon="⌁"
-            />
-          </div>
-        )}
-
-        {/* ======== LEFT DRAWER (retraíble) ======== */}
-        {!zen && leftOpen && (
-          <div className="absolute left-[84px] top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-              <div className="text-white font-semibold text-sm">
-                {activeTool === "design"
-                  ? "Plantillas"
-                  : activeTool === "elements"
-                  ? "Elementos"
-                  : activeTool === "text"
-                  ? "Texto"
-                  : activeTool === "uploads"
-                  ? "Subidos"
-                  : activeTool === "brand"
-                  ? "Marca"
-                  : "Apps"}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                  onClick={resetDoc}
-                  title="Reset documento"
-                >
-                  Reset
-                </button>
-                <button
-                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                  onClick={() => setLeftOpen(false)}
-                  title="Cerrar panel"
-                >
-                  ✕
-                </button>
-              </div>
+      {/* Panel izquierdo flotante (se va en ZEN) */}
+      {!zen && (
+        <div
+          className={`absolute left-[84px] top-16 bottom-3 z-30 w-[340px] rounded-2xl bg-[#060A12]/70 border border-white/10 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)]
+          transition-all duration-200 ${leftOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-3 pointer-events-none"}`}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+            <div className="text-white/90 text-sm font-semibold tracking-wide">
+              {activeToolTitle(activeTool)}
             </div>
-
-            <div className="p-3 h-full overflow-auto">
-              {!hasDoc ? (
-                <div className="text-white/60 text-sm">
-                  Crea un documento para comenzar. <span className="text-white/40">(Diseño → elige una plantilla)</span>
-                </div>
-              ) : null}
-
-              {/* DESIGN: templates */}
-              {activeTool === "design" && (
-                <div className="space-y-2">
-                  {(templates || []).map((t) => (
-                    <button
-                      key={t.id}
-                      className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                      onClick={() => createFromTemplate(t)}
-                    >
-                      <div className="text-white font-medium">{t.title}</div>
-                      <div className="text-white/60 text-xs">{t.subtitle}</div>
-                    </button>
-                  ))}
-
-                  <div className="mt-4 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
-                    <div className="text-white font-semibold text-sm">Mis diseños</div>
-                    <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
-                    <div className="mt-3 text-white/40 text-[11px]">
-                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ELEMENTS: preview blocks */}
-              {activeTool === "elements" && (
-                <div className="space-y-3">
-                  <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs"
-                      onClick={addShape}
-                      disabled={!hasDoc}
-                      title="Agregar rect"
-                    >
-                      + Rect
-                    </button>
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs opacity-70"
-                      disabled
-                      title="Próximamente"
-                    >
-                      + Circle
-                    </button>
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bgwhite/10 p-3 text-white text-xs opacity-70"
-                      disabled
-                      title="Próximamente"
-                    >
-                      + Line
-                    </button>
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs opacity-70"
-                      disabled
-                      title="Próximamente"
-                    >
-                      + Icon
-                    </button>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-white/80 text-sm font-semibold">Panel Elementos</div>
-                    <div className="text-white/50 text-xs mt-1">
-                      Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TEXT: preview */}
-              {activeTool === "text" && (
-                <div className="space-y-3">
-                  <button
-                    className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm"
-                    onClick={addText}
-                    disabled={!hasDoc}
-                  >
-                    + Agregar texto
-                  </button>
-
-                  <div className="space-y-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-white/80 text-sm font-semibold">Título</div>
-                      <div className="text-white/50 text-xs">Preset (próximamente)</div>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-white/80 text-sm font-semibold">Subtítulo</div>
-                      <div className="text-white/50 text-xs">Preset (próximamente)</div>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-white/80 text-sm font-semibold">Cuerpo</div>
-                      <div className="text-white/50 text-xs">Preset (próximamente)</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Uploads / Brand / Apps: preview only */}
-              {activeTool === "uploads" && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="text-white font-semibold">Subidos</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: aquí irá drag & drop + librería.</div>
-                </div>
-              )}
-
-              {activeTool === "brand" && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="text-white font-semibold">Marca</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: logos, paleta, tipografías guardadas.</div>
-                </div>
-              )}
-
-              {activeTool === "apps" && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="text-white font-semibold">Apps</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: generador IA, QR, mockups, etc.</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ======== RIGHT DRAWER (Inspector retraíble) ======== */}
-        {!zen && rightOpen && (
-          <div className="absolute right-3 top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-              <div className="text-white font-semibold text-sm">Inspector</div>
+            <div className="flex items-center gap-2">
               <button
                 className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                onClick={() => setRightOpen(false)}
-                title="Cerrar inspector"
+                onClick={() => setLeftOpen(false)}
+                title="Cerrar"
               >
                 ✕
               </button>
             </div>
-
-            <div className="p-3 h-full overflow-auto">
-              {!localDoc ? (
-                <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div>
-              ) : (
-                <InspectorMini doc={localDoc} onChange={commit} />
-              )}
-            </div>
           </div>
-        )}
 
-        {/* ======== CANVAS AREA (full) ======== */}
-        <div className="absolute inset-0">
-          {!hasDoc ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
-                <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
-                <div className="text-white/40 text-xs mt-2">
-                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode
-                </div>
+          <div className="p-3 h-full overflow-auto">
+            {/* Solo preview UI por ahora */}
+            {activeTool === "design" && <DesignPanelPreview onPickPreset={(w,h)=>onChange?.({...(doc||{}), meta:{...(doc?.meta||{}), w, h, panX:0, panY:0, zoom:1}})} />}
+            {activeTool === "elements" && <ElementsPanelPreview />}
+            {activeTool === "text" && <TextPanelPreview onAddText={() => {/* luego lo conectamos */}} />}
+            {activeTool === "uploads" && <UploadsPanelPreview />}
+            {activeTool === "brand" && <BrandPanelPreview />}
+            {activeTool === "apps" && <AppsPanelPreview />}
+          </div>
+        </div>
+      )}
+
+      {/* Inspector derecho flotante (se va en ZEN) */}
+      {!zen && (
+        <div
+          className={`absolute right-3 top-16 bottom-3 z-30 w-[360px] rounded-2xl bg-[#060A12]/70 border border-white/10 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)]
+          transition-all duration-200 ${rightOpen ? "opacity-100 translate-x-0" : "opacity-0 translate-x-3 pointer-events-none"}`}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+            <div className="text-white/90 text-sm font-semibold tracking-wide">Inspector</div>
+            <button
+              className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+              onClick={() => setRightOpen(false)}
+              title="Cerrar"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="p-3 h-full overflow-auto space-y-3">
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+              <div className="text-white/70 text-xs">Selección</div>
+              <div className="text-white/90 text-sm mt-1">
+                {selectedNode ? `${String(selectedNode.type).toUpperCase()} • ${selectedNode.id.slice(-6)}` : "—"}
               </div>
             </div>
-          ) : (
-            <StudioCanvas doc={localDoc} onChange={commit} compact={compact} />
-          )}
+
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+              <div className="text-white/70 text-xs">Documento</div>
+              <div className="text-white/90 text-sm mt-1">
+                Fondo: <span className="text-white/70">{doc?.meta?.bg || "#0B1220"}</span>
+              </div>
+              <div className="text-white/60 text-xs mt-2">
+                (Por ahora preview. Luego conectamos sliders, color picker, capas, etc.)
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+              <div className="text-white/70 text-xs">AUREA Tips</div>
+              <div className="text-white/60 text-xs mt-2 leading-relaxed">
+                Próximo: drag & drop, snapping, layers, assets, presets por red social.
+              </div>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Canvas ocupa TODO el espacio (en Zen ocupa ABSOLUTAMENTE TODO) */}
+      <div className="absolute inset-0">
+        <StudioCanvas doc={doc} onChange={onChange} compact={zen} />
       </div>
     </div>
   );
 }
 
-/* ----------------------------- Dock Button ----------------------------- */
+/* ----------------------------- UI Bits ----------------------------- */
 
-function DockBtn({ label, icon, active, onClick }) {
+function RailBtn({ label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-[44px] h-[44px] rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition
-      ${active ? "bg-amber-500/20 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}`}
+      className={`w-[52px] h-[52px] rounded-2xl border flex flex-col items-center justify-center gap-1 transition
+      ${active ? "bg-amber-500/15 border-amber-400/25 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}`}
       title={label}
     >
-      <div className="text-sm leading-none">{icon}</div>
-      <div className="text-[9px] leading-none">{label}</div>
+      <div className="w-5 h-5 rounded-lg bg-white/10 border border-white/10" />
+      <div className="text-[10px] leading-none">{label}</div>
     </button>
   );
 }
 
-/* ----------------------------- Inspector Mini ----------------------------- */
+function activeToolTitle(key) {
+  if (key === "design") return "Diseño";
+  if (key === "elements") return "Elementos";
+  if (key === "text") return "Texto";
+  if (key === "uploads") return "Subidos";
+  if (key === "brand") return "Marca";
+  if (key === "apps") return "Apps";
+  return "Panel";
+}
 
-function InspectorMini({ doc, onChange }) {
-  const selected = useMemo(() => {
-    if (!doc?.selectedId) return null;
-    return doc.nodes.find((n) => n.id === doc.selectedId) || null;
-  }, [doc]);
+/* ----------------------------- Panel Previews (solo UI) ----------------------------- */
 
-  const patchDoc = useCallback(
-    (patch) => {
-      onChange({ ...doc, ...patch });
-    },
-    [doc, onChange]
+function Block({ title, subtitle, right, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-white/90 text-sm font-semibold">{title}</div>
+          {subtitle && <div className="text-white/50 text-xs mt-0.5">{subtitle}</div>}
+        </div>
+        {right && <div className="text-white/40 text-xs">{right}</div>}
+      </div>
+    </button>
   );
+}
 
-  function patchSelected(patch) {
-    if (!selected) return;
-    const next = {
-      ...doc,
-      nodes: doc.nodes.map((n) => (n.id === selected.id ? { ...n, ...patch } : n)),
-    };
-    onChange(next);
-  }
-
-  const duplicate = () => {
-    if (!selected) return;
-    const copy = { ...selected, id: uid(), x: (selected.x || 0) + 24, y: (selected.y || 0) + 24 };
-    patchDoc({ nodes: [...doc.nodes, copy], selectedId: copy.id });
-  };
-
-  const deleteSelected = () => {
-    if (!selected) return;
-    patchDoc({ nodes: doc.nodes.filter((n) => n.id !== selected.id), selectedId: null });
-  };
-
+function DesignPanelPreview({ onPickPreset }) {
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-        <div className="text-white/70 text-xs">Documento</div>
-        <div className="text-white text-sm mt-1">
-          {doc.meta.w}×{doc.meta.h}
-        </div>
-        <div className="text-white/50 text-xs mt-1">Fondo: {doc.meta.bg}</div>
+      <div className="text-white/60 text-xs">Plantillas (preview)</div>
+      <Block title="Instagram Post" subtitle="1080×1080" right="Pro" onClick={() => onPickPreset?.(1080, 1080)} />
+      <Block title="Instagram Story" subtitle="1080×1920" right="Pro" onClick={() => onPickPreset?.(1080, 1920)} />
+      <Block title="Facebook Cover" subtitle="1640×624" right="Pro" onClick={() => onPickPreset?.(1640, 624)} />
+      <div className="pt-2 text-white/40 text-[11px]">
+        Luego conectamos: categorías, búsqueda, assets premium, etc.
       </div>
+    </div>
+  );
+}
 
-      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-        <div className="text-white/70 text-xs">Capas</div>
-        <div className="mt-2 space-y-1 max-h-[240px] overflow-auto pr-1">
-          {doc.nodes
-            .slice()
-            .map((n, idx) => {
-              const isSel = doc.selectedId === n.id;
-              const label =
-                n.type === "text"
-                  ? (n.text || "Texto").slice(0, 18)
-                  : n.type === "rect"
-                  ? "Shape"
-                  : n.type;
-
-              return (
-                <button
-                  key={n.id}
-                  className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
-                    isSel
-                      ? "bg-sky-500/10 border-sky-400/30 text-white"
-                      : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
-                  }`}
-                  onClick={() => onChange({ ...doc, selectedId: n.id })}
-                  title={label}
-                >
-                  <div className="text-xs flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
-                      {n.type}
-                    </span>
-                    <span className="truncate max-w-[160px]">{label}</span>
-                  </div>
-                  <div className="text-[10px] text-white/40">#{idx + 1}</div>
-                </button>
-              );
-            })}
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-        <div className="text-white/70 text-xs">Selección</div>
-
-        {!selected ? (
-          <div className="text-white/50 text-sm mt-2">Haz click en un elemento del canvas.</div>
-        ) : (
-          <div className="space-y-2 mt-2">
-            <div className="text-white text-sm">
-              Tipo: <span className="text-white/70">{selected.type}</span>
-            </div>
-
-            {selected.type === "text" && (
-              <>
-                <label className="block text-white/60 text-xs mt-2">Texto</label>
-                <input
-                  className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                  value={selected.text || ""}
-                  onChange={(e) => patchSelected({ text: e.target.value })}
-                />
-
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <div>
-                    <label className="block text-white/60 text-xs">Tamaño</label>
-                    <input
-                      type="number"
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.fontSize || 32}
-                      onChange={(e) => patchSelected({ fontSize: Number(e.target.value) || 32 })}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-white/60 text-xs">Color</label>
-                    <input
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.fill || "#E9EEF9"}
-                      onChange={(e) => patchSelected({ fill: e.target.value })}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {selected.type === "rect" && (
-              <>
-                <label className="block text-white/60 text-xs mt-2">Color</label>
-                <input
-                  className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                  value={selected.fill || "#2B3A67"}
-                  onChange={(e) => patchSelected({ fill: e.target.value })}
-                />
-
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <div>
-                    <label className="block text-white/60 text-xs">Radius</label>
-                    <input
-                      type="number"
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.cornerRadius || 0}
-                      onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-white/60 text-xs">Rotación</label>
-                    <input
-                      type="number"
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.rotation || 0}
-                      onChange={(e) => patchSelected({ rotation: Number(e.target.value) || 0 })}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={duplicate}
-              >
-                Duplicar
-              </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs"
-                onClick={deleteSelected}
-              >
-                Eliminar
-              </button>
-            </div>
+function ElementsPanelPreview() {
+  return (
+    <div className="space-y-3">
+      <div className="text-white/60 text-xs">Elementos (preview)</div>
+      <div className="grid grid-cols-3 gap-2">
+        {["Rect", "Circle", "Line", "Star", "Arrow", "Frame"].map((x) => (
+          <div key={x} className="h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/70 text-xs">
+            {x}
           </div>
-        )}
+        ))}
       </div>
+      <div className="text-white/40 text-[11px]">Luego: SVG, stickers, icon packs, shapes pro.</div>
+    </div>
+  );
+}
+
+function TextPanelPreview() {
+  return (
+    <div className="space-y-3">
+      <div className="text-white/60 text-xs">Texto (preview)</div>
+      <Block title="Agregar título" subtitle="Estilo cine" />
+      <Block title="Agregar subtítulo" subtitle="Estilo limpio" />
+      <Block title="Agregar párrafo" subtitle="Lectura rápida" />
+      <div className="text-white/40 text-[11px]">Luego: tipografías, presets, spacing, estilos guardados.</div>
+    </div>
+  );
+}
+
+function UploadsPanelPreview() {
+  return (
+    <div className="space-y-3">
+      <div className="text-white/60 text-xs">Subidos (preview)</div>
+      <div className="h-28 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 text-xs">
+        Drag & drop aquí (próximo)
+      </div>
+      <div className="text-white/40 text-[11px]">Luego: librería por proyecto + historial.</div>
+    </div>
+  );
+}
+
+function BrandPanelPreview() {
+  return (
+    <div className="space-y-3">
+      <div className="text-white/60 text-xs">Marca (preview)</div>
+      <Block title="Paleta" subtitle="Negro + Dorado AUREA" />
+      <Block title="Logos" subtitle="PNG/SVG" />
+      <Block title="Estilos" subtitle="Botones + cards" />
+      <div className="text-white/40 text-[11px]">Luego: brand kits por usuario.</div>
+    </div>
+  );
+}
+
+function AppsPanelPreview() {
+  return (
+    <div className="space-y-3">
+      <div className="text-white/60 text-xs">Apps (preview)</div>
+      <Block title="Generar imagen IA" subtitle="Firefly-like (próximo)" />
+      <Block title="Mockups" subtitle="Pro pipeline" />
+      <Block title="QR / Código" subtitle="Generador" />
+      <div className="text-white/40 text-[11px]">Luego: marketplace.</div>
     </div>
   );
 }
