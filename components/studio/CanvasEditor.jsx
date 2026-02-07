@@ -56,7 +56,15 @@ function normalizeDoc(input) {
 
 function makeEmptyDoc({ w, h, bg, presetKey }) {
   return normalizeDoc({
-    meta: { w, h, bg: bg || "#0B1220", zoom: 1, panX: 0, panY: 0, presetKey: presetKey || "" },
+    meta: {
+      w,
+      h,
+      bg: bg || "#0B1220",
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      presetKey: presetKey || "",
+    },
     nodes: [
       {
         id: uid(),
@@ -74,7 +82,7 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
         type: "text",
         x: 84,
         y: 180,
-        text: "Canvas persistente PRO",
+        text: "Canvas PRO (modo Canva)",
         fontSize: 34,
         fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto",
         fill: "rgba(233,238,249,0.78)",
@@ -85,27 +93,6 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
   });
 }
 
-/* ----------------------------- LocalStorage UI ----------------------------- */
-
-const UI_KEY = "aurea33:studio:ui";
-
-function loadUI() {
-  try {
-    const raw = localStorage.getItem(UI_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function saveUI(patch) {
-  try {
-    const cur = loadUI() || {};
-    localStorage.setItem(UI_KEY, JSON.stringify({ ...cur, ...patch }));
-  } catch {}
-}
-
 /* ----------------------------- Component ----------------------------- */
 
 export default function CanvasEditor({
@@ -113,7 +100,6 @@ export default function CanvasEditor({
   onChange,
   templates = TEMPLATES,
   onNewFromTemplate,
-  onDuplicate,
   compact = false,
 }) {
   const externalDoc = doc || null;
@@ -125,24 +111,22 @@ export default function CanvasEditor({
   const undoRef = useRef([]);
   const redoRef = useRef([]);
 
-  // ✅ UI state (Canva-style)
-  const ui0 = typeof window !== "undefined" ? loadUI() : null;
-  const [leftOpen, setLeftOpen] = useState(ui0?.leftOpen ?? false);
-  const [leftTab, setLeftTab] = useState(ui0?.leftTab ?? "design");
-  const [rightOpen, setRightOpen] = useState(ui0?.rightOpen ?? false);
+  // Panels (Canva-like)
+  const [activeTool, setActiveTool] = useState("design"); // design | elements | text | uploads | brand | apps
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [zen, setZen] = useState(false);
 
-  useEffect(() => saveUI({ leftOpen, leftTab, rightOpen }), [leftOpen, leftTab, rightOpen]);
-
-  // Sync local doc when doc changes outside
+  // Keep local doc in sync when studio.doc changes from outside
   useEffect(() => {
     const next = normalizeDoc(externalDoc);
     setLocalDoc(next);
     undoRef.current = [];
     redoRef.current = [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalDoc?.meta?.presetKey, externalDoc?.meta?.w, externalDoc?.meta?.h]);
 
   const hasDoc = !!localDoc;
-  const shellClass = compact ? "h-[70vh]" : "h-[78vh]";
 
   const commit = useCallback(
     (nextDoc, opts = {}) => {
@@ -192,47 +176,23 @@ export default function CanvasEditor({
     });
   }, [onChange]);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts: Ctrl/Cmd+Z / Shift+Z / Y + Zen (Ctrl/Cmd+\)
   useEffect(() => {
     const onKeyDown = (ev) => {
       const isMod = ev.ctrlKey || ev.metaKey;
+      if (!isMod) return;
 
-      // Undo/Redo
-      if (isMod) {
-        const k = ev.key.toLowerCase();
-        if (k === "z" && !ev.shiftKey) {
-          ev.preventDefault();
-          undo();
-          return;
-        }
-        if ((k === "z" && ev.shiftKey) || k === "y") {
-          ev.preventDefault();
-          redo();
-          return;
-        }
-      }
+      const k = ev.key.toLowerCase();
 
-      // Panels
-      if (isMod && ev.key === "1") {
+      if (k === "z" && !ev.shiftKey) {
         ev.preventDefault();
-        openLeft("design");
-      }
-      if (isMod && ev.key === "2") {
+        undo();
+      } else if ((k === "z" && ev.shiftKey) || k === "y") {
         ev.preventDefault();
-        openLeft("elements");
-      }
-      if (isMod && ev.key === "3") {
+        redo();
+      } else if (k === "\\") {
         ev.preventDefault();
-        openLeft("text");
-      }
-      if (isMod && (ev.key.toLowerCase() === "p")) {
-        ev.preventDefault();
-        setRightOpen((s) => !s);
-      }
-
-      if (ev.key === "Escape") {
-        setLeftOpen(false);
-        setRightOpen(false);
+        setZen((v) => !v);
       }
     };
 
@@ -240,12 +200,22 @@ export default function CanvasEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo]);
 
-  const openLeft = (tab) => {
-    setLeftTab(tab);
-    setLeftOpen(true);
+  /* ----------------------------- Actions ----------------------------- */
+
+  const createFromTemplate = (t) => {
+    const next = makeEmptyDoc(t);
+    undoRef.current = [];
+    redoRef.current = [];
+    commit(next, { silent: true });
+    onNewFromTemplate?.(t);
   };
 
-  const closeLeft = () => setLeftOpen(false);
+  const resetDoc = () => {
+    setLocalDoc(null);
+    undoRef.current = [];
+    redoRef.current = [];
+    onChange?.(null);
+  };
 
   const addText = () => {
     if (!localDoc) return;
@@ -277,130 +247,351 @@ export default function CanvasEditor({
       ...localDoc,
       nodes: [
         ...localDoc.nodes,
-        { id, type: "rect", x: 140, y: 180, width: 320, height: 180, fill: "#2B3A67", cornerRadius: 24, draggable: true },
+        {
+          id,
+          type: "rect",
+          x: 140,
+          y: 180,
+          width: 320,
+          height: 180,
+          fill: "#2B3A67",
+          cornerRadius: 24,
+          draggable: true,
+        },
       ],
       selectedId: id,
     });
   };
 
-  return (
-    <div className={`w-full ${shellClass} relative`}>
-      <div className="w-full h-full flex gap-3">
-        {/* -------- Left Dock (siempre visible) -------- */}
-        <LeftDock
-          active={leftOpen ? leftTab : null}
-          onPick={(tab) => {
-            if (leftOpen && leftTab === tab) closeLeft();
-            else openLeft(tab);
-          }}
-        />
+  /* ----------------------------- Layout ----------------------------- */
 
-        {/* -------- Left Drawer (retraíble) -------- */}
-        {leftOpen && (
-          <LeftDrawer
-            tab={leftTab}
-            templates={templates}
-            hasDoc={hasDoc}
-            onClose={closeLeft}
-            onReset={() => {
-              setLocalDoc(null);
-              undoRef.current = [];
-              redoRef.current = [];
-              onChange?.(null);
-              closeLeft();
-            }}
-            onCreateFromTemplate={(t) => {
-              const next = makeEmptyDoc(t);
-              undoRef.current = [];
-              redoRef.current = [];
-              commit(next, { silent: true });
-              onNewFromTemplate?.(t);
-              closeLeft(); // opcional: cierra al elegir
-            }}
-            onAddText={addText}
-            onAddShape={addShape}
-          />
+  return (
+    <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
+      {/* ======== TOP HUD (mini) ======== */}
+      <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-2">
+          <button
+            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+            onClick={undo}
+            disabled={!undoRef.current.length}
+            title="Undo (Ctrl/Cmd+Z)"
+          >
+            Undo
+          </button>
+          <button
+            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+            onClick={redo}
+            disabled={!redoRef.current.length}
+            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
+          >
+            Redo
+          </button>
+
+          <div className="w-px h-7 bg-white/10 mx-1" />
+
+          <button
+            className={`px-3 py-2 rounded-xl border text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md ${
+              zen
+                ? "bg-amber-500/20 border-amber-400/30 hover:bg-amber-500/30"
+                : "bg-white/5 border-white/10 hover:bg-white/10"
+            }`}
+            onClick={() => setZen((v) => !v)}
+            title="Zen (Ctrl/Cmd+\)"
+          >
+            ZEN
+          </button>
+
+          <button
+            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+            onClick={() => setLeftOpen((v) => !v)}
+            title="Mostrar/Ocultar panel izquierdo"
+          >
+            {leftOpen ? "Ocultar panel" : "Panel"}
+          </button>
+
+          <button
+            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
+            onClick={() => setRightOpen((v) => !v)}
+            title="Mostrar/Ocultar inspector"
+          >
+            {rightOpen ? "Ocultar inspector" : "Inspector"}
+          </button>
+        </div>
+
+        {hasDoc ? (
+          <div className="pointer-events-none text-white/70 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+            {localDoc.meta.w}×{localDoc.meta.h} • zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
+          </div>
+        ) : null}
+      </div>
+
+      {/* ======== MAIN STAGE WRAP ======== */}
+      <div className="absolute inset-0 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden">
+        {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
+        {!zen && (
+          <div className="absolute left-3 top-16 bottom-3 z-20 w-[64px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
+            <DockBtn
+              label="Diseño"
+              active={activeTool === "design"}
+              onClick={() => {
+                setActiveTool("design");
+                setLeftOpen(true);
+              }}
+              icon="▦"
+            />
+            <DockBtn
+              label="Elementos"
+              active={activeTool === "elements"}
+              onClick={() => {
+                setActiveTool("elements");
+                setLeftOpen(true);
+              }}
+              icon="⬡"
+            />
+            <DockBtn
+              label="Texto"
+              active={activeTool === "text"}
+              onClick={() => {
+                setActiveTool("text");
+                setLeftOpen(true);
+              }}
+              icon="T"
+            />
+            <DockBtn
+              label="Subidos"
+              active={activeTool === "uploads"}
+              onClick={() => {
+                setActiveTool("uploads");
+                setLeftOpen(true);
+              }}
+              icon="⇪"
+            />
+            <DockBtn
+              label="Marca"
+              active={activeTool === "brand"}
+              onClick={() => {
+                setActiveTool("brand");
+                setLeftOpen(true);
+              }}
+              icon="♥"
+            />
+            <DockBtn
+              label="Apps"
+              active={activeTool === "apps"}
+              onClick={() => {
+                setActiveTool("apps");
+                setLeftOpen(true);
+              }}
+              icon="⌁"
+            />
+          </div>
         )}
 
-        {/* -------- Main Canvas Area (FULL) -------- */}
-        <div className="flex-1 rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md overflow-hidden relative">
-          {/* HUD TOP (premium, compacto) */}
-          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
-            <div className="pointer-events-auto flex items-center gap-2">
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-                onClick={undo}
-                disabled={!undoRef.current.length}
-                title="Undo (Ctrl/Cmd+Z)"
-              >
-                Undo
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md"
-                onClick={redo}
-                disabled={!redoRef.current.length}
-                title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
-              >
-                Redo
-              </button>
+        {/* ======== LEFT DRAWER (retraíble) ======== */}
+        {!zen && leftOpen && (
+          <div className="absolute left-[84px] top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+              <div className="text-white font-semibold text-sm">
+                {activeTool === "design"
+                  ? "Plantillas"
+                  : activeTool === "elements"
+                  ? "Elementos"
+                  : activeTool === "text"
+                  ? "Texto"
+                  : activeTool === "uploads"
+                  ? "Subidos"
+                  : activeTool === "brand"
+                  ? "Marca"
+                  : "Apps"}
+              </div>
 
-              <div className="w-px h-7 bg-white/10 mx-1" />
+              <div className="flex items-center gap-2">
+                <button
+                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                  onClick={resetDoc}
+                  title="Reset documento"
+                >
+                  Reset
+                </button>
+                <button
+                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                  onClick={() => setLeftOpen(false)}
+                  title="Cerrar panel"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
 
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={() => openLeft("design")}
-                title="Diseño (Ctrl/Cmd+1)"
-              >
-                Diseño
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={() => openLeft("elements")}
-                title="Elementos (Ctrl/Cmd+2)"
-              >
-                Elementos
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={() => openLeft("text")}
-                title="Texto (Ctrl/Cmd+3)"
-              >
-                Texto
-              </button>
+            <div className="p-3 h-full overflow-auto">
+              {!hasDoc ? (
+                <div className="text-white/60 text-sm">
+                  Crea un documento para comenzar. <span className="text-white/40">(Diseño → elige una plantilla)</span>
+                </div>
+              ) : null}
 
+              {/* DESIGN: templates */}
+              {activeTool === "design" && (
+                <div className="space-y-2">
+                  {(templates || []).map((t) => (
+                    <button
+                      key={t.id}
+                      className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
+                      onClick={() => createFromTemplate(t)}
+                    >
+                      <div className="text-white font-medium">{t.title}</div>
+                      <div className="text-white/60 text-xs">{t.subtitle}</div>
+                    </button>
+                  ))}
+
+                  <div className="mt-4 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
+                    <div className="text-white font-semibold text-sm">Mis diseños</div>
+                    <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
+                    <div className="mt-3 text-white/40 text-[11px]">
+                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ELEMENTS: preview blocks */}
+              {activeTool === "elements" && (
+                <div className="space-y-3">
+                  <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs"
+                      onClick={addShape}
+                      disabled={!hasDoc}
+                      title="Agregar rect"
+                    >
+                      + Rect
+                    </button>
+                    <button
+                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs opacity-70"
+                      disabled
+                      title="Próximamente"
+                    >
+                      + Circle
+                    </button>
+                    <button
+                      className="rounded-2xl border border-white/10 bg-white/5 hover:bgwhite/10 p-3 text-white text-xs opacity-70"
+                      disabled
+                      title="Próximamente"
+                    >
+                      + Line
+                    </button>
+                    <button
+                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs opacity-70"
+                      disabled
+                      title="Próximamente"
+                    >
+                      + Icon
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-white/80 text-sm font-semibold">Panel Elementos</div>
+                    <div className="text-white/50 text-xs mt-1">
+                      Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TEXT: preview */}
+              {activeTool === "text" && (
+                <div className="space-y-3">
+                  <button
+                    className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm"
+                    onClick={addText}
+                    disabled={!hasDoc}
+                  >
+                    + Agregar texto
+                  </button>
+
+                  <div className="space-y-2">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-white/80 text-sm font-semibold">Título</div>
+                      <div className="text-white/50 text-xs">Preset (próximamente)</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-white/80 text-sm font-semibold">Subtítulo</div>
+                      <div className="text-white/50 text-xs">Preset (próximamente)</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-white/80 text-sm font-semibold">Cuerpo</div>
+                      <div className="text-white/50 text-xs">Preset (próximamente)</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Uploads / Brand / Apps: preview only */}
+              {activeTool === "uploads" && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-white font-semibold">Subidos</div>
+                  <div className="text-white/50 text-xs mt-1">Preview UI: aquí irá drag & drop + librería.</div>
+                </div>
+              )}
+
+              {activeTool === "brand" && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-white font-semibold">Marca</div>
+                  <div className="text-white/50 text-xs mt-1">Preview UI: logos, paleta, tipografías guardadas.</div>
+                </div>
+              )}
+
+              {activeTool === "apps" && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="text-white font-semibold">Apps</div>
+                  <div className="text-white/50 text-xs mt-1">Preview UI: generador IA, QR, mockups, etc.</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ======== RIGHT DRAWER (Inspector retraíble) ======== */}
+        {!zen && rightOpen && (
+          <div className="absolute right-3 top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+              <div className="text-white font-semibold text-sm">Inspector</div>
               <button
-                className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs"
-                onClick={() => setRightOpen(true)}
-                title="Propiedades (Ctrl/Cmd+P)"
+                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                onClick={() => setRightOpen(false)}
+                title="Cerrar inspector"
               >
-                Propiedades
+                ✕
               </button>
             </div>
 
-            {hasDoc ? (
-              <div className="pointer-events-none text-white/70 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                {localDoc.meta.w}×{localDoc.meta.h} • zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
-              </div>
-            ) : null}
+            <div className="p-3 h-full overflow-auto">
+              {!localDoc ? (
+                <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div>
+              ) : (
+                <InspectorMini doc={localDoc} onChange={commit} />
+              )}
+            </div>
           </div>
+        )}
 
+        {/* ======== CANVAS AREA (full) ======== */}
+        <div className="absolute inset-0">
           {!hasDoc ? (
-            <EmptyState />
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
+                <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
+                <div className="text-white/40 text-xs mt-2">
+                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode
+                </div>
+              </div>
+            </div>
           ) : (
             <StudioCanvas doc={localDoc} onChange={commit} compact={compact} />
-          )}
-
-          {/* Right Drawer (flotante) */}
-          {rightOpen && (
-            <RightDrawer
-              doc={localDoc}
-              onClose={() => setRightOpen(false)}
-              onUndo={undo}
-              onRedo={redo}
-              onChange={commit}
-              onAddText={addText}
-              onAddShape={addShape}
-            />
           )}
         </div>
       </div>
@@ -408,254 +599,34 @@ export default function CanvasEditor({
   );
 }
 
-/* ----------------------------- Left Dock ----------------------------- */
+/* ----------------------------- Dock Button ----------------------------- */
 
-function DockBtn({ active, label, icon, onClick }) {
+function DockBtn({ label, icon, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-2 rounded-2xl border transition ${
-        active
-          ? "bg-amber-400/10 border-amber-300/30 text-white"
-          : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
-      }`}
+      className={`w-[44px] h-[44px] rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition
+      ${active ? "bg-amber-500/20 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}`}
       title={label}
     >
-      <span className="w-7 h-7 rounded-xl bg-black/30 border border-white/10 grid place-items-center text-[12px]">
-        {icon}
-      </span>
-      <span className="text-xs">{label}</span>
+      <div className="text-sm leading-none">{icon}</div>
+      <div className="text-[9px] leading-none">{label}</div>
     </button>
   );
 }
 
-function LeftDock({ active, onPick }) {
-  return (
-    <div className="w-[86px] shrink-0 rounded-2xl border border-white/10 bg-black/25 backdrop-blur-md p-2 flex flex-col gap-2">
-      <DockBtn active={active === "design"} label="Diseño" icon="▦" onClick={() => onPick("design")} />
-      <DockBtn active={active === "elements"} label="Elementos" icon="⬡" onClick={() => onPick("elements")} />
-      <DockBtn active={active === "text"} label="Texto" icon="T" onClick={() => onPick("text")} />
-      <DockBtn active={active === "uploads"} label="Subidos" icon="⇪" onClick={() => onPick("uploads")} />
-      <DockBtn active={active === "brand"} label="Marca" icon="♥" onClick={() => onPick("brand")} />
-      <DockBtn active={active === "apps"} label="Apps" icon="⌁" onClick={() => onPick("apps")} />
-      <div className="mt-auto pt-2 border-t border-white/10">
-        <div className="text-[10px] text-white/35 text-center">AUREA</div>
-      </div>
-    </div>
-  );
-}
+/* ----------------------------- Inspector Mini ----------------------------- */
 
-/* ----------------------------- Left Drawer ----------------------------- */
-
-function LeftDrawer({ tab, templates, hasDoc, onClose, onReset, onCreateFromTemplate, onAddText, onAddShape }) {
-  return (
-    <div className="w-[340px] shrink-0 rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md overflow-hidden">
-      <div className="p-3 flex items-center justify-between border-b border-white/10">
-        <div>
-          <div className="text-white font-semibold">
-            {tab === "design" ? "Plantillas" :
-             tab === "elements" ? "Elementos" :
-             tab === "text" ? "Texto" :
-             tab === "uploads" ? "Subidos" :
-             tab === "brand" ? "Marca" :
-             tab === "apps" ? "Apps" : "Panel"}
-          </div>
-          <div className="text-white/45 text-xs">Esc (cerrar) • Ctrl/Cmd+1/2/3</div>
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-            onClick={onReset}
-            title="Reset"
-          >
-            Reset
-          </button>
-          <button
-            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-            onClick={onClose}
-            title="Cerrar"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <div className="p-3">
-        {tab === "design" && (
-          <div className="space-y-2">
-            {(templates || []).map((t) => (
-              <button
-                key={t.id}
-                className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                onClick={() => onCreateFromTemplate(t)}
-              >
-                <div className="text-white font-medium">{t.title}</div>
-                <div className="text-white/60 text-xs">{t.subtitle}</div>
-              </button>
-            ))}
-
-            <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
-              <div className="text-white font-semibold text-sm">Mis diseños</div>
-              <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
-              <div className="mt-2 text-white/40 text-[11px]">
-                Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
-                <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-                <span className="text-white/60">Ctrl/Cmd+P</span> Propiedades
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "elements" && (
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="text-white/70 text-xs">Acciones rápidas</div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={onAddShape}>
-                  + Shape
-                </button>
-                <button className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={onAddText}>
-                  + Texto
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="text-white/70 text-xs">Próximamente</div>
-              <div className="text-white/50 text-sm mt-1">
-                Íconos, stickers, figuras, mockups, elementos de marca, imágenes IA.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "text" && (
-          <div className="space-y-3">
-            <button
-              className="w-full px-3 py-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-sm"
-              onClick={onAddText}
-              disabled={!hasDoc}
-              title={!hasDoc ? "Crea un documento primero" : "Agregar texto"}
-            >
-              Agregar texto
-            </button>
-
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="text-white/70 text-xs">Próximamente</div>
-              <div className="text-white/50 text-sm mt-1">
-                Presets: título, subtítulo, cuerpo, tipografías premium, estilos AUREA.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "uploads" && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="text-white/70 text-xs">Subidos</div>
-            <div className="text-white/50 text-sm mt-1">
-              (Preview) Aquí va upload de imágenes/PNG/SVG + librería por proyecto.
-            </div>
-          </div>
-        )}
-
-        {tab === "brand" && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="text-white/70 text-xs">Marca</div>
-            <div className="text-white/50 text-sm mt-1">
-              (Preview) Logos, colores, tipografías, kits por cliente.
-            </div>
-          </div>
-        )}
-
-        {tab === "apps" && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="text-white/70 text-xs">Apps</div>
-            <div className="text-white/50 text-sm mt-1">
-              (Preview) Herramientas futuras: remover fondo, mockups, QR, generador IA.
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ----------------------------- Right Drawer (Inspector flotante) ----------------------------- */
-
-function RightDrawer({ doc, onClose, onUndo, onRedo, onChange, onAddText, onAddShape }) {
-  return (
-    <div className="absolute top-3 right-3 bottom-3 w-[340px] z-30 pointer-events-auto">
-      <div className="h-full rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,.55)]">
-        <div className="p-3 flex items-center justify-between border-b border-white/10">
-          <div>
-            <div className="text-white font-semibold">Propiedades</div>
-            <div className="text-white/45 text-xs">Ctrl/Cmd+P • Esc</div>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[11px]"
-              onClick={onUndo}
-              title="Undo"
-            >
-              ⟲
-            </button>
-            <button
-              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[11px]"
-              onClick={onRedo}
-              title="Redo"
-            >
-              ⟳
-            </button>
-            <button
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-              onClick={onClose}
-              title="Cerrar"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="p-3">
-          {!doc ? (
-            <div className="text-white/50 text-sm">
-              Crea un documento para editar propiedades.
-            </div>
-          ) : (
-            <Inspector doc={doc} onChange={onChange} onAddText={onAddText} onAddShape={onAddShape} />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ----------------------------- EmptyState ----------------------------- */
-
-function EmptyState() {
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center">
-        <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
-        <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
-        <div className="text-white/40 text-[11px] mt-2">Atajo: Ctrl/Cmd+1</div>
-      </div>
-    </div>
-  );
-}
-
-/* ----------------------------- Inspector ----------------------------- */
-
-function Inspector({ doc, onChange, onAddText, onAddShape }) {
+function InspectorMini({ doc, onChange }) {
   const selected = useMemo(() => {
     if (!doc?.selectedId) return null;
     return doc.nodes.find((n) => n.id === doc.selectedId) || null;
   }, [doc]);
 
   const patchDoc = useCallback(
-    (patch) => onChange({ ...doc, ...patch }),
+    (patch) => {
+      onChange({ ...doc, ...patch });
+    },
     [doc, onChange]
   );
 
@@ -667,18 +638,6 @@ function Inspector({ doc, onChange, onAddText, onAddShape }) {
     };
     onChange(next);
   }
-
-  const bringToFront = () => {
-    if (!selected) return;
-    const rest = doc.nodes.filter((n) => n.id !== selected.id);
-    patchDoc({ nodes: [...rest, selected] });
-  };
-
-  const sendToBack = () => {
-    if (!selected) return;
-    const rest = doc.nodes.filter((n) => n.id !== selected.id);
-    patchDoc({ nodes: [selected, ...rest] });
-  };
 
   const duplicate = () => {
     if (!selected) return;
@@ -693,68 +652,52 @@ function Inspector({ doc, onChange, onAddText, onAddShape }) {
 
   return (
     <div className="space-y-3">
-      {/* Documento */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
         <div className="text-white/70 text-xs">Documento</div>
         <div className="text-white text-sm mt-1">
           {doc.meta.w}×{doc.meta.h}
         </div>
-
-        <div className="mt-2 flex gap-2">
-          <button
-            className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-            onClick={onAddText}
-          >
-            + Texto
-          </button>
-          <button
-            className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-            onClick={onAddShape}
-          >
-            + Shape
-          </button>
-        </div>
+        <div className="text-white/50 text-xs mt-1">Fondo: {doc.meta.bg}</div>
       </div>
 
-      {/* Capas */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-        <div className="flex items-center justify-between">
-          <div className="text-white/70 text-xs">Capas</div>
-          <div className="text-white/40 text-[11px]">{doc.nodes.length}</div>
-        </div>
-
+        <div className="text-white/70 text-xs">Capas</div>
         <div className="mt-2 space-y-1 max-h-[240px] overflow-auto pr-1">
-          {doc.nodes.slice().map((n, idx) => {
-            const isSel = doc.selectedId === n.id;
-            const label =
-              n.type === "text" ? (n.text || "Texto").slice(0, 18) :
-              n.type === "rect" ? "Shape" : n.type;
+          {doc.nodes
+            .slice()
+            .map((n, idx) => {
+              const isSel = doc.selectedId === n.id;
+              const label =
+                n.type === "text"
+                  ? (n.text || "Texto").slice(0, 18)
+                  : n.type === "rect"
+                  ? "Shape"
+                  : n.type;
 
-            return (
-              <button
-                key={n.id}
-                className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
-                  isSel
-                    ? "bg-sky-500/10 border-sky-400/30 text-white"
-                    : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
-                }`}
-                onClick={() => onChange({ ...doc, selectedId: n.id })}
-                title={label}
-              >
-                <div className="text-xs flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
-                    {n.type}
-                  </span>
-                  <span className="truncate max-w-[160px]">{label}</span>
-                </div>
-                <div className="text-[10px] text-white/40">#{idx + 1}</div>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={n.id}
+                  className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
+                    isSel
+                      ? "bg-sky-500/10 border-sky-400/30 text-white"
+                      : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
+                  }`}
+                  onClick={() => onChange({ ...doc, selectedId: n.id })}
+                  title={label}
+                >
+                  <div className="text-xs flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
+                      {n.type}
+                    </span>
+                    <span className="truncate max-w-[160px]">{label}</span>
+                  </div>
+                  <div className="text-[10px] text-white/40">#{idx + 1}</div>
+                </button>
+              );
+            })}
         </div>
       </div>
 
-      {/* Selección */}
       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
         <div className="text-white/70 text-xs">Selección</div>
 
@@ -764,27 +707,6 @@ function Inspector({ doc, onChange, onAddText, onAddShape }) {
           <div className="space-y-2 mt-2">
             <div className="text-white text-sm">
               Tipo: <span className="text-white/70">{selected.type}</span>
-            </div>
-
-            <div className="flex gap-2">
-              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={bringToFront}>
-                Frente
-              </button>
-              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={sendToBack}>
-                Atrás
-              </button>
-            </div>
-
-            <div className="flex gap-2">
-              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={duplicate}>
-                Duplicar
-              </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs"
-                onClick={deleteSelected}
-              >
-                Eliminar
-              </button>
             </div>
 
             {selected.type === "text" && (
@@ -851,6 +773,21 @@ function Inspector({ doc, onChange, onAddText, onAddShape }) {
                 </div>
               </>
             )}
+
+            <div className="flex gap-2">
+              <button
+                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
+                onClick={duplicate}
+              >
+                Duplicar
+              </button>
+              <button
+                className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs"
+                onClick={deleteSelected}
+              >
+                Eliminar
+              </button>
+            </div>
           </div>
         )}
       </div>
