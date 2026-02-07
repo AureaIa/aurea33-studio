@@ -3,13 +3,18 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import StudioCanvas from "./StudioCanvas";
 
-/* ----------------------------- Plantillas ----------------------------- */
-
-const TEMPLATES = [
-  { id: "ig-post", title: "Instagram Post", subtitle: "1080×1080", w: 1080, h: 1080, bg: "#0B1220", presetKey: "ig_post" },
-  { id: "ig-story", title: "Instagram Story", subtitle: "1080×1920", w: 1080, h: 1920, bg: "#0B1220", presetKey: "ig_story" },
-  { id: "fb-cover", title: "Facebook Cover", subtitle: "820×312", w: 820, h: 312, bg: "#0B1220", presetKey: "fb_cover" },
+/* ----------------------------- Formatos (Canvas Sizes) ----------------------------- */
+/**
+ * FORMATS = solo tamaño + fondo.
+ * NO contienen diseño (nodes). Eso será TEMPLATES después.
+ */
+const FORMATS = [
+  { id: "ig-post",  title: "Instagram Post",  subtitle: "1080×1080", w: 1080, h: 1080, bg: "#0B1220" },
+  { id: "ig-story", title: "Instagram Story", subtitle: "1080×1920", w: 1080, h: 1920, bg: "#0B1220" },
+  { id: "fb-cover", title: "Facebook Cover", subtitle: "820×312",   w: 820,  h: 312,  bg: "#0B1220" },
 ];
+
+const DEFAULT_FORMATS = FORMATS;
 
 /* ----------------------------- Utils ----------------------------- */
 
@@ -93,16 +98,55 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
   });
 }
 
+/* ----------------------------- Templates Manifest Loader ----------------------------- */
+
+async function loadManifest() {
+  const res = await fetch("/templates/manifest.json", { cache: "no-store" });
+  if (!res.ok) throw new Error("No se pudo cargar manifest.json");
+  return res.json();
+}
+
+
 /* ----------------------------- Component ----------------------------- */
 
 export default function CanvasEditor({
   doc,
   onChange,
-  templates = TEMPLATES,
+  formats = DEFAULT_FORMATS,
   onNewFromTemplate,
   compact = false,
 }) {
   const externalDoc = doc || null;
+
+  /* ----------------------------- Templates Marketplace State ----------------------------- */
+
+  const [marketTemplates, setMarketTemplates] = useState([]);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    loadManifest()
+      .then((m) => setMarketTemplates(Array.isArray(m.items) ? m.items : []))
+      .catch(() => setMarketTemplates([]));
+  }, []);
+
+  const filteredMarket = useMemo(() => {
+    const qq = (q || "").trim().toLowerCase();
+    if (!qq) return marketTemplates;
+
+    return marketTemplates.filter((t) => {
+      const hay = [
+        t.title,
+        t.subtitle,
+        t.category,
+        ...(Array.isArray(t.tags) ? t.tags : []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return hay.includes(qq);
+    });
+  }, [marketTemplates, q]);
 
   // Local doc (single source for editor)
   const [localDoc, setLocalDoc] = useState(() => normalizeDoc(externalDoc));
@@ -434,31 +478,109 @@ export default function CanvasEditor({
                 </div>
               ) : null}
 
-              {/* DESIGN: templates */}
-              {activeTool === "design" && (
-                <div className="space-y-2">
-                  {(templates || []).map((t) => (
-                    <button
-                      key={t.id}
-                      className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                      onClick={() => createFromTemplate(t)}
-                    >
-                      <div className="text-white font-medium">{t.title}</div>
-                      <div className="text-white/60 text-xs">{t.subtitle}</div>
-                    </button>
-                  ))}
+              {/*🔥🔥🔥🔥🔥🔥🔥🔥 DESIGN: templates 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥*/}
+              
+             {activeTool === "design" && (
+  <div className="space-y-3">
+    {/* Header tipo Canva */}
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+      <div className="text-white text-lg font-semibold leading-tight">
+        ¿Qué vamos a diseñar hoy?
+      </div>
+      <div className="text-white/50 text-xs mt-1">
+        Busca dentro del catálogo de plantillas.
+      </div>
 
-                  <div className="mt-4 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
-                    <div className="text-white font-semibold text-sm">Mis diseños</div>
-                    <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
-                    <div className="mt-3 text-white/40 text-[11px]">
-                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen
-                    </div>
-                  </div>
+      <div className="mt-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Busca plantillas: doctores, cosmética, arquitectura, contabilidad..."
+          className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none focus:border-sky-400/40"
+        />
+      </div>
+    </div>
+
+    {/* Sección: Formatos */}
+    <div className="flex items-center justify-between">
+      <div className="text-white/80 text-sm font-semibold">Formatos</div>
+      <div className="text-white/40 text-[11px]">Tamaño + fondo</div>
+    </div>
+
+    <div className="space-y-2">
+      {(formats || []).map((f) => (
+        <button
+          key={f.id}
+          className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
+          onClick={() => createFromTemplate(f)}
+        >
+          <div className="text-white font-medium">{f.title}</div>
+          <div className="text-white/60 text-xs">{f.subtitle}</div>
+        </button>
+      ))}
+    </div>
+
+    {/* Sección: Plantillas Marketplace */}
+    <div className="mt-2 flex items-center justify-between">
+      <div className="text-white/80 text-sm font-semibold">Plantillas</div>
+      <div className="text-white/40 text-[11px]">
+        {filteredMarket.length} encontradas
+      </div>
+    </div>
+
+    {filteredMarket.length === 0 ? (
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">
+        No hay plantillas que coincidan con tu búsqueda.
+      </div>
+    ) : (
+      <div className="grid grid-cols-2 gap-2">
+        {filteredMarket.map((t) => (
+          <button
+            key={t.id}
+            className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left"
+            onClick={() => {
+              // 🔥 aquí aún NO aplicamos doc (eso es el Paso 3)
+              // por ahora solo vamos a verificar que renderiza bonito
+              console.log("template click:", t.id);
+            }}
+            title={t.title}
+          >
+            <div className="relative w-full aspect-[4/3] bg-black/30 overflow-hidden">
+              <img
+                src={t.preview || "/templates/previews/demo.jpg"}
+                alt={t.title}
+                className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition"
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
+              <div className="absolute bottom-2 left-2 right-2">
+                <div className="text-white text-xs font-semibold truncate">
+                  {t.title}
                 </div>
-              )}
+                <div className="text-white/60 text-[10px] truncate">
+                  {t.subtitle || t.category || "Plantilla"}
+                </div>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    )}
+
+    {/* Mis diseños (lo dejamos igual) */}
+    <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
+      <div className="text-white font-semibold text-sm">Mis diseños</div>
+      <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
+      <div className="mt-3 text-white/40 text-[11px]">
+        Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
+        <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+        <span className="text-white/60">Ctrl/Cmd+\</span> Zen
+      </div>
+    </div>
+  </div>
+)}
+
+
 
               {/* ELEMENTS: preview blocks */}
               {activeTool === "elements" && (
