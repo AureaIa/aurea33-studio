@@ -387,7 +387,7 @@ export default function CanvasEditor({
       <div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
         {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
         {!zen && (
-          <div className="absolute left-3 top-16 bottom-3 z-20 w-[64px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
+          <div className="absolute left-3 top-16 bottom-3 z-20 w-[78px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
             <DockBtn
               label="Diseño"
               active={activeTool === "design"}
@@ -748,31 +748,30 @@ export default function CanvasEditor({
 
 /* ----------------------------- Dock Button ----------------------------- */
 
-function DockBtn({ label, icon, active, onClick, orbitMotion }) {
+function DockBtn({ label, icon, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`relative w-[44px] h-[44px] rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition overflow-hidden
-      ${
-        active
-          ? "bg-amber-500/15 border-amber-400/30 text-amber-100"
-          : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
-      }
+      className={`group relative w-[60px] h-[58px] rounded-2xl border flex flex-col items-center justify-center gap-1 transition overflow-hidden
+      ${active ? "bg-amber-500/15 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      {active ? (
-        <span
-          className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border ${
-            orbitMotion ? "aurea-orbit-always" : ""
-          }`}
-        />
-      ) : null}
-      <div className="relative z-10 text-sm leading-none">{icon}</div>
-      <div className="relative z-10 text-[9px] leading-none">{label}</div>
+      {/* ✅ ORBIT BORDER (igual que los botones pro) */}
+      <span
+        className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition
+        ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+      />
+
+      {/* Soft glow wash */}
+      <span className="pointer-events-none absolute -inset-10 aurea-glow-wash opacity-40 group-hover:opacity-70 transition" />
+
+      <div className="relative z-10 text-[18px] leading-none">{icon}</div>
+      <div className="relative z-10 text-[10px] leading-none tracking-wide">{label}</div>
     </button>
   );
 }
+
 
 /* ----------------------------- Inspector Mini ----------------------------- */
 
