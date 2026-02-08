@@ -950,49 +950,11 @@ function GlowButton({
 function AureaFXStyles() {
   return (
     <style jsx global>{`
+      /* ===== Base buttons ===== */
       .aurea-glow-soft {
         background: rgba(255, 255, 255, 0.04);
         border-color: rgba(255, 255, 255, 0.10);
         color: rgba(255, 255, 255, 0.92);
-
-        @property --aurea-rot {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
-.aurea-orbit-border::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 2px;
-  background: conic-gradient(
-    from var(--aurea-rot),
-    rgba(255, 215, 100, 0) 0deg,
-    rgba(255, 215, 100, 0) 280deg,
-    rgba(255, 215, 100, 0.95) 320deg,
-    rgba(255, 215, 100, 0) 360deg
-  );
-
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-
-  filter: drop-shadow(0 0 18px rgba(255, 215, 100, 0.55));
-  opacity: 0.9;
-  animation: none;
-}
-
-.group:hover .aurea-orbit-border::before {
-  animation: aurea-rotate 1.4s linear infinite;
-}
-
-@keyframes aurea-rotate {
-  0% { --aurea-rot: 0deg; }
-  100% { --aurea-rot: 360deg; }
-}
-
       }
       .aurea-glow-amber {
         background: rgba(245, 158, 11, 0.10);
@@ -1010,28 +972,39 @@ function AureaFXStyles() {
         color: rgba(255, 255, 255, 0.95);
       }
 
-      /* ======= Orbit border (punto/luz recorriendo contorno) ======= */
-      /* Permite animar custom properties en Chrome/Edge */
-@property --aurea-rot {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
+      /* Soft glow wash */
+      .aurea-glow-wash {
+        background: radial-gradient(
+          circle at 20% 0%,
+          rgba(255, 215, 100, 0.18),
+          rgba(0, 0, 0, 0) 55%
+        );
+        opacity: 0.6;
+        transform: translateZ(0);
+      }
 
+      /* ✅ Permite animar custom properties en Chrome/Edge */
+      @property --aurea-rot {
+        syntax: "<angle>";
+        inherits: false;
+        initial-value: 0deg;
+      }
+
+      /* ===== Orbit border (punto recorriendo contorno) ===== */
       .aurea-orbit-border::before {
         content: "";
-        animation: none;
         position: absolute;
         inset: 0;
         border-radius: inherit;
-        padding: 2px; /* grosor del borde */
+        padding: 2px; /* grosor borde */
+
+        /* Puntito dorado */
         background: conic-gradient(
-  from var(--aurea-rot),
-  rgba(255,215,100,0) 0deg,
-  rgba(255,215,100,0) 330deg,
-  rgba(255,215,100,1) 345deg,
-  rgba(255,215,100,0) 360deg
-          .group:hover .aurea-orbit-border::before { animation: aurea-rotate 1.1s linear infinite;}
+          from var(--aurea-rot),
+          rgba(255, 215, 100, 0) 0deg,
+          rgba(255, 215, 100, 0) 330deg,
+          rgba(255, 215, 100, 1) 345deg,
+          rgba(255, 215, 100, 0) 360deg
         );
 
         /* Mostrar sólo borde */
@@ -1041,18 +1014,15 @@ function AureaFXStyles() {
         mask-composite: exclude;
 
         filter: drop-shadow(0 0 18px rgba(255, 215, 100, 0.55));
-        opacity: 0.9;
-        animation: aurea-rotate 2.2s linear infinite;
+        opacity: 0.95;
+
+        /* No gira si no hay hover */
+        animation: none;
       }
 
-      .aurea-glow-wash {
-        background: radial-gradient(
-          circle at 20% 0%,
-          rgba(255, 215, 100, 0.18),
-          rgba(0, 0, 0, 0) 55%
-        );
-        opacity: 0.6;
-        transform: translateZ(0);
+      /* ✅ Gira SOLO en hover (requiere "group" en el botón) */
+      .group:hover .aurea-orbit-border::before {
+        animation: aurea-rotate 1.2s linear infinite;
       }
 
       @keyframes aurea-rotate {
@@ -1064,9 +1034,8 @@ function AureaFXStyles() {
         }
       }
 
-      /* reduce motion */
       @media (prefers-reduced-motion: reduce) {
-        .aurea-orbit-border::before {
+        .group:hover .aurea-orbit-border::before {
           animation: none !important;
         }
       }
