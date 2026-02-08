@@ -106,6 +106,97 @@ async function loadManifest(signal) {
   return res.json();
 }
 
+async function loadTemplateDoc(itemPath) {
+  const res = await fetch(itemPath, { cache: "no-store" });
+  if (!res.ok) throw new Error("No se pudo cargar template item");
+  return res.json();
+}
+
+/* ----------------------------- PRO Variations ----------------------------- */
+
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+const PRO_PALETTES = [
+  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764" }, // Aurea gold
+  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8" }, // Sky pro
+  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA" }, // Violet premium
+  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399" }, // Emerald
+];
+
+const PRO_FONTS = [
+  "Inter, system-ui, -apple-system, Segoe UI, Roboto",
+  "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
+  "SF Pro Display, Inter, system-ui, -apple-system, Segoe UI, Roboto",
+];
+
+function applyProVariation(baseDoc, seedStr) {
+  const seed = hashSeed(seedStr);
+  const rnd = mulberry32(seed);
+  const pal = PRO_PALETTES[Math.floor(rnd() * PRO_PALETTES.length)];
+  const font = PRO_FONTS[Math.floor(rnd() * PRO_FONTS.length)];
+
+  const jitter = (v, amt) => v + (rnd() * 2 - 1) * amt;
+
+  const nodes = (baseDoc.nodes || []).map((n) => {
+    if (n.type === "text") {
+      const big = (n.fontSize || 24) >= 70;
+      const accentChance = rnd();
+      const alpha = 0.62 + rnd() * 0.25;
+
+      return {
+        ...n,
+        id: uid(),
+        fontFamily: font,
+        fill: big && accentChance > 0.72 ? pal.accent : n.fill?.includes("rgba") ? `rgba(248,250,255,${alpha})` : pal.fg,
+        fontSize: Math.max(14, Math.round((n.fontSize || 24) * (0.92 + rnd() * 0.22))),
+        x: Math.round(jitter(n.x || 0, big ? 10 : 16)),
+        y: Math.round(jitter(n.y || 0, big ? 10 : 16)),
+      };
+    }
+
+    if (n.type === "rect") {
+      const alpha = 0.05 + rnd() * 0.10;
+      return {
+        ...n,
+        id: uid(),
+        fill: `rgba(255,255,255,${alpha.toFixed(3)})`,
+        cornerRadius: Math.round((n.cornerRadius || 18) * (0.85 + rnd() * 0.5)),
+        x: Math.round(jitter(n.x || 0, 10)),
+        y: Math.round(jitter(n.y || 0, 10)),
+      };
+    }
+
+    return { ...n, id: uid() };
+  });
+
+  return {
+    ...baseDoc,
+    meta: {
+      ...baseDoc.meta,
+      bg: pal.bg,
+    },
+    nodes,
+    selectedId: null,
+  };
+}
+
 /* ----------------------------- Component ----------------------------- */
 
 export default function CanvasEditor({
@@ -122,6 +213,9 @@ export default function CanvasEditor({
   const [marketTemplates, setMarketTemplates] = useState([]);
   const [q, setQ] = useState("");
 
+  // ✅ Template seleccionado (para Variaciones PRO)
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+
   useEffect(() => {
     const controller = new AbortController();
     loadManifest(controller.signal)
@@ -135,16 +229,10 @@ export default function CanvasEditor({
     if (!qq) return marketTemplates;
 
     return marketTemplates.filter((t) => {
-      const hay = [
-        t.title,
-        t.subtitle,
-        t.category,
-        ...(Array.isArray(t.tags) ? t.tags : []),
-      ]
+      const hay = [t.title, t.subtitle, t.category, ...(Array.isArray(t.tags) ? t.tags : [])]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-
       return hay.includes(qq);
     });
   }, [marketTemplates, q]);
@@ -272,6 +360,7 @@ export default function CanvasEditor({
     const next = makeEmptyDoc(t);
     undoRef.current = [];
     redoRef.current = [];
+    setSelectedTemplate(null);
     commit(next, { silent: true });
     onNewFromTemplate?.(t);
   };
@@ -280,6 +369,7 @@ export default function CanvasEditor({
     setLocalDoc(null);
     undoRef.current = [];
     redoRef.current = [];
+    setSelectedTemplate(null);
     onChange?.(null);
   };
 
@@ -342,19 +432,11 @@ export default function CanvasEditor({
             Undo
           </GlowButton>
 
-          <GlowButton
-            onClick={redo}
-            disabled={!redoRef.current.length}
-            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
-          >
+          <GlowButton onClick={redo} disabled={!redoRef.current.length} title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)">
             Redo
           </GlowButton>
 
-          <GlowButton
-            onClick={toggleZen}
-            title="Zen (Ctrl/Cmd+\)"
-            variant={zen ? "amber" : "soft"}
-          >
+          <GlowButton onClick={toggleZen} title="Zen (Ctrl/Cmd+\)" variant={zen ? "amber" : "soft"}>
             ZEN
           </GlowButton>
 
@@ -377,8 +459,7 @@ export default function CanvasEditor({
 
         {hasDoc ? (
           <div className="pointer-events-none text-white/70 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-            {localDoc.meta.w}×{localDoc.meta.h} • zoom{" "}
-            {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
+            {localDoc.meta.w}×{localDoc.meta.h} • zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
           </div>
         ) : null}
       </div>
@@ -539,9 +620,7 @@ export default function CanvasEditor({
                   {/* Sección: Plantillas Marketplace */}
                   <div className="mt-2 flex items-center justify-between">
                     <div className="text-white/80 text-sm font-semibold">Plantillas</div>
-                    <div className="text-white/40 text-[11px]">
-                      {filteredMarket.length} encontradas
-                    </div>
+                    <div className="text-white/40 text-[11px]">{filteredMarket.length} encontradas</div>
                   </div>
 
                   {filteredMarket.length === 0 ? (
@@ -554,10 +633,40 @@ export default function CanvasEditor({
                         <button
                           key={t.id}
                           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left
-                            hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
-                          onClick={() => {
-                            // Paso 3: aquí aplicaremos doc real de plantilla
-                            console.log("template click:", t.id);
+                          hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
+                          onClick={async () => {
+                            try {
+                              setSelectedTemplate(t);
+
+                              // 1) carga el doc base del template
+                              const base = await loadTemplateDoc(t.itemPath);
+
+                              // 2) resuelve el formato (si trae formatId)
+                              const fmt = (formats || []).find((f) => f.id === t.formatId) || null;
+
+                              const baseDoc = normalizeDoc({
+                                meta: {
+                                  w: fmt?.w ?? base?.meta?.w ?? 1080,
+                                  h: fmt?.h ?? base?.meta?.h ?? 1080,
+                                  bg: fmt?.bg ?? base?.meta?.bg ?? "#0B1220",
+                                  zoom: 1,
+                                  panX: 0,
+                                  panY: 0,
+                                  presetKey: `${t.id}::base`,
+                                },
+                                nodes: Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [],
+                                selectedId: null,
+                              });
+
+                              // 3) aplica una variación PRO por default
+                              const proDoc = applyProVariation(baseDoc, `${t.id}::v0`);
+
+                              undoRef.current = [];
+                              redoRef.current = [];
+                              commit(proDoc, { silent: true });
+                            } catch (e) {
+                              console.error(e);
+                            }
                           }}
                           title={t.title}
                         >
@@ -570,9 +679,7 @@ export default function CanvasEditor({
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
                             <div className="absolute bottom-2 left-2 right-2">
-                              <div className="text-white text-xs font-semibold truncate">
-                                {t.title}
-                              </div>
+                              <div className="text-white text-xs font-semibold truncate">{t.title}</div>
                               <div className="text-white/60 text-[10px] truncate">
                                 {t.subtitle || t.category || "Plantilla"}
                               </div>
@@ -583,12 +690,62 @@ export default function CanvasEditor({
                     </div>
                   )}
 
+                  {/* ✅ Variaciones PRO */}
+                  {selectedTemplate ? (
+                    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-white/80 text-sm font-semibold">Variaciones PRO</div>
+                        <div className="text-white/40 text-[11px]">
+                          {selectedTemplate.proVariations || 24} estilos
+                        </div>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-4 gap-2">
+                        {Array.from({ length: selectedTemplate.proVariations || 24 }).map((_, i) => (
+                          <button
+                            key={i}
+                            className="rounded-xl border border-white/10 bg-black/20 hover:bg-white/10 text-white/70 text-[11px] py-2"
+                            onClick={async () => {
+                              try {
+                                const base = await loadTemplateDoc(selectedTemplate.itemPath);
+                                const fmt = (formats || []).find((f) => f.id === selectedTemplate.formatId) || null;
+
+                                const baseDoc = normalizeDoc({
+                                  meta: {
+                                    w: fmt?.w ?? base?.meta?.w ?? 1080,
+                                    h: fmt?.h ?? base?.meta?.h ?? 1080,
+                                    bg: fmt?.bg ?? base?.meta?.bg ?? "#0B1220",
+                                    zoom: 1,
+                                    panX: 0,
+                                    panY: 0,
+                                    presetKey: `${selectedTemplate.id}::v${i}`,
+                                  },
+                                  nodes: Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [],
+                                  selectedId: null,
+                                });
+
+                                const proDoc = applyProVariation(baseDoc, `${selectedTemplate.id}::v${i}`);
+
+                                undoRef.current = [];
+                                redoRef.current = [];
+                                commit(proDoc, { silent: true });
+                              } catch (e) {
+                                console.error(e);
+                              }
+                            }}
+                            title={`Aplicar variación ${i + 1}`}
+                          >
+                            V{i + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {/* Mis diseños */}
                   <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
                     <div className="text-white font-semibold text-sm">Mis diseños</div>
-                    <div className="text-white/50 text-xs">
-                      (Luego conectamos historial por proyecto)
-                    </div>
+                    <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
                     <div className="mt-3 text-white/40 text-[11px]">
                       Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
                       <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
@@ -612,31 +769,20 @@ export default function CanvasEditor({
                     >
                       + Rect
                     </button>
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70"
-                      disabled
-                    >
+                    <button className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70" disabled>
                       + Circle
                     </button>
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70"
-                      disabled
-                    >
+                    <button className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70" disabled>
                       + Line
                     </button>
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70"
-                      disabled
-                    >
+                    <button className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70" disabled>
                       + Icon
                     </button>
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                     <div className="text-white/80 text-sm font-semibold">Panel Elementos</div>
-                    <div className="text-white/50 text-xs mt-1">
-                      Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.
-                    </div>
+                    <div className="text-white/50 text-xs mt-1">Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.</div>
                   </div>
                 </div>
               )}
@@ -673,27 +819,21 @@ export default function CanvasEditor({
               {activeTool === "uploads" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Subidos</div>
-                  <div className="text-white/50 text-xs mt-1">
-                    Preview UI: aquí irá drag & drop + librería.
-                  </div>
+                  <div className="text-white/50 text-xs mt-1">Preview UI: aquí irá drag & drop + librería.</div>
                 </div>
               )}
 
               {activeTool === "brand" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Marca</div>
-                  <div className="text-white/50 text-xs mt-1">
-                    Preview UI: logos, paleta, tipografías guardadas.
-                  </div>
+                  <div className="text-white/50 text-xs mt-1">Preview UI: logos, paleta, tipografías guardadas.</div>
                 </div>
               )}
 
               {activeTool === "apps" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Apps</div>
-                  <div className="text-white/50 text-xs mt-1">
-                    Preview UI: generador IA, QR, mockups, etc.
-                  </div>
+                  <div className="text-white/50 text-xs mt-1">Preview UI: generador IA, QR, mockups, etc.</div>
                 </div>
               )}
             </div>
@@ -748,7 +888,7 @@ export default function CanvasEditor({
 
 /* ----------------------------- Dock Button ----------------------------- */
 
-function DockBtn({ label, icon, active, onClick }) {
+function DockBtn({ label, icon, active, onClick, orbitMotion }) {
   return (
     <button
       onClick={onClick}
@@ -757,10 +897,10 @@ function DockBtn({ label, icon, active, onClick }) {
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      {/* ✅ ORBIT BORDER (igual que los botones pro) */}
+      {/* ✅ ORBIT BORDER */}
       <span
         className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition
-        ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+        ${orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
       />
 
       {/* Soft glow wash */}
@@ -771,7 +911,6 @@ function DockBtn({ label, icon, active, onClick }) {
     </button>
   );
 }
-
 
 /* ----------------------------- Inspector Mini ----------------------------- */
 
@@ -913,9 +1052,7 @@ function InspectorMini({ doc, onChange }) {
                       type="number"
                       className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
                       value={selected.cornerRadius || 0}
-                      onChange={(e) =>
-                        patchSelected({ cornerRadius: Number(e.target.value) || 0 })
-                      }
+                      onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })}
                     />
                   </div>
 
@@ -933,10 +1070,7 @@ function InspectorMini({ doc, onChange }) {
             )}
 
             <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={duplicate}
-              >
+              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={duplicate}>
                 Duplicar
               </button>
               <button
@@ -1012,11 +1146,7 @@ function AureaFXStyles() {
 
       /* Soft glow wash */
       .aurea-glow-wash {
-        background: radial-gradient(
-          circle at 20% 0%,
-          rgba(255, 215, 100, 0.18),
-          rgba(0, 0, 0, 0) 55%
-        );
+        background: radial-gradient(circle at 20% 0%, rgba(255, 215, 100, 0.18), rgba(0, 0, 0, 0) 55%);
         opacity: 0.6;
         transform: translateZ(0);
       }
@@ -1053,12 +1183,12 @@ function AureaFXStyles() {
         animation: none;
       }
 
-      /* hover motion (GlowButton usa className group) */
+      /* hover motion (GlowButton y DockBtn usan className group) */
       .group:hover .aurea-orbit-border::before {
         animation: aurea-rotate 1.2s linear infinite;
       }
 
-      /* always motion (Dock activo cuando orbitMotion=true) */
+      /* always motion (Dock cuando orbitMotion=true) */
       .aurea-orbit-always::before {
         animation: aurea-rotate 1.2s linear infinite;
       }

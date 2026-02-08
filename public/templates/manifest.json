@@ -1,55 +1,26 @@
 {
-  "version": 1,
-  "updatedAt": "2026-02-07",
   "items": [
     {
-      "id": "tpl_cosmetics_001",
-      "title": "Cosmética Glow - Promo",
+      "id": "cosmetica_glow",
+      "title": "Cosmética Glow — Promo",
+      "subtitle": "Instagram Post",
       "category": "Cosmética",
-      "tags": ["beauty", "promo", "instagram", "glow", "gradient"],
+      "tags": ["promo", "beauty", "glow", "instagram"],
+      "preview": "/templates/previews/cosmetica_glow.jpg",
+      "itemPath": "/templates/items/cosmetica_glow.json",
       "formatId": "ig-post",
-      "preview": "/templates/previews/demo.jpg",
-      "doc": {
-        "meta": { "w": 1080, "h": 1080, "bg": "#0B1220", "presetKey": "tpl_cosmetics_001" },
-        "nodes": [
-          { "id": "t1", "type": "text", "x": 80, "y": 90, "text": "GLOW SERUM", "fontSize": 88, "fontFamily": "Inter, system-ui", "fill": "#E9EEF9", "draggable": true },
-          { "id": "t2", "type": "text", "x": 86, "y": 190, "text": "20% OFF • Solo hoy", "fontSize": 40, "fontFamily": "Inter, system-ui", "fill": "rgba(233,238,249,0.75)", "draggable": true },
-          { "id": "r1", "type": "rect", "x": 70, "y": 760, "width": 940, "height": 190, "fill": "rgba(255,255,255,0.07)", "cornerRadius": 32, "draggable": true }
-        ],
-        "selectedId": null
-      }
+      "proVariations": 24
     },
     {
-      "id": "tpl_med_001",
-      "title": "Clínica - Recordatorio Cita",
+      "id": "clinica_recordatorio_cita",
+      "title": "Clínica — Recordatorio Cita",
+      "subtitle": "Instagram Story",
       "category": "Doctores",
-      "tags": ["medical", "clinic", "appointment", "clean", "facebook"],
-      "formatId": "ig-post",
-      "preview": "/templates/previews/demo.jpg",
-      "doc": {
-        "meta": { "w": 1080, "h": 1080, "bg": "#0B1220", "presetKey": "tpl_med_001" },
-        "nodes": [
-          { "id": "m1", "type": "text", "x": 80, "y": 90, "text": "Tu salud primero", "fontSize": 76, "fontFamily": "Inter, system-ui", "fill": "#E9EEF9", "draggable": true },
-          { "id": "m2", "type": "text", "x": 82, "y": 180, "text": "Agenda hoy • Resultados rápidos", "fontSize": 34, "fontFamily": "Inter, system-ui", "fill": "rgba(233,238,249,0.75)", "draggable": true }
-        ],
-        "selectedId": null
-      }
-    },
-    {
-      "id": "tpl_arch_001",
-      "title": "Arquitectura - Portafolio Minimal",
-      "category": "Arquitectura",
-      "tags": ["architecture", "portfolio", "minimal", "grid"],
-      "formatId": "fb-cover",
-      "preview": "/templates/previews/demo.jpg",
-      "doc": {
-        "meta": { "w": 820, "h": 312, "bg": "#0B1220", "presetKey": "tpl_arch_001" },
-        "nodes": [
-          { "id": "a1", "type": "text", "x": 40, "y": 80, "text": "STUDIO ARCH", "fontSize": 56, "fontFamily": "Inter, system-ui", "fill": "#E9EEF9", "draggable": true },
-          { "id": "a2", "type": "text", "x": 42, "y": 150, "text": "Diseño • Construcción • Interiorismo", "fontSize": 22, "fontFamily": "Inter, system-ui", "fill": "rgba(233,238,249,0.75)", "draggable": true }
-        ],
-        "selectedId": null
-      }
+      "tags": ["salud", "cita", "recordatorio", "story"],
+      "preview": "/templates/previews/clinica_recordatorio_cita.jpg",
+      "itemPath": "/templates/items/clinica_recordatorio_cita.json",
+      "formatId": "ig-story",
+      "proVariations": 24
     }
   ]
 }

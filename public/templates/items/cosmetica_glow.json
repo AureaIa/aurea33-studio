@@ -1,0 +1,49 @@
+{
+  "meta": { "w": 1080, "h": 1080, "bg": "#0B1220" },
+  "nodes": [
+    {
+      "id": "t1",
+      "type": "text",
+      "x": 90,
+      "y": 120,
+      "text": "GLOW WEEK",
+      "fontSize": 96,
+      "fontFamily": "Inter, system-ui",
+      "fill": "#F8FAFF",
+      "draggable": true
+    },
+    {
+      "id": "t2",
+      "type": "text",
+      "x": 92,
+      "y": 235,
+      "text": "Hasta -40% en faciales",
+      "fontSize": 40,
+      "fontFamily": "Inter, system-ui",
+      "fill": "rgba(248,250,255,0.75)",
+      "draggable": true
+    },
+    {
+      "id": "r1",
+      "type": "rect",
+      "x": 90,
+      "y": 820,
+      "width": 900,
+      "height": 150,
+      "fill": "rgba(255,255,255,0.06)",
+      "cornerRadius": 28,
+      "draggable": true
+    },
+    {
+      "id": "t3",
+      "type": "text",
+      "x": 130,
+      "y": 860,
+      "text": "Reserva hoy  •  DM / WhatsApp",
+      "fontSize": 34,
+      "fontFamily": "Inter, system-ui",
+      "fill": "rgba(248,250,255,0.85)",
+      "draggable": true
+    }
+  ]
+}
