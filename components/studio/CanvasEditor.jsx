@@ -9,15 +9,14 @@ import StudioCanvas from "./StudioCanvas";
  * NO contienen diseño (nodes). Eso será TEMPLATES después.
  */
 const FORMATS = [
-  { id: "ig-post",  title: "Instagram Post",  subtitle: "1080×1080", w: 1080, h: 1080, bg: "#0B1220" },
+  { id: "ig-post", title: "Instagram Post", subtitle: "1080×1080", w: 1080, h: 1080, bg: "#0B1220" },
   { id: "ig-story", title: "Instagram Story", subtitle: "1080×1920", w: 1080, h: 1920, bg: "#0B1220" },
-  { id: "fb-cover", title: "Facebook Cover", subtitle: "820×312",   w: 820,  h: 312,  bg: "#0B1220" },
+  { id: "fb-cover", title: "Facebook Cover", subtitle: "820×312", w: 820, h: 312, bg: "#0B1220" },
 ];
 
 const DEFAULT_FORMATS = FORMATS;
 
 /* ----------------------------- Utils ----------------------------- */
-
 
 function uid() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -101,12 +100,11 @@ function makeEmptyDoc({ w, h, bg, presetKey }) {
 
 /* ----------------------------- Templates Manifest Loader ----------------------------- */
 
-async function loadManifest() {
-  const res = await fetch("/templates/manifest.json", { cache: "no-store" });
+async function loadManifest(signal) {
+  const res = await fetch("/templates/manifest.json", { cache: "no-store", signal });
   if (!res.ok) throw new Error("No se pudo cargar manifest.json");
   return res.json();
 }
-
 
 /* ----------------------------- Component ----------------------------- */
 
@@ -119,16 +117,17 @@ export default function CanvasEditor({
 }) {
   const externalDoc = doc || null;
 
-  
   /* ----------------------------- Templates Marketplace State ----------------------------- */
 
   const [marketTemplates, setMarketTemplates] = useState([]);
   const [q, setQ] = useState("");
 
   useEffect(() => {
-    loadManifest()
+    const controller = new AbortController();
+    loadManifest(controller.signal)
       .then((m) => setMarketTemplates(Array.isArray(m.items) ? m.items : []))
       .catch(() => setMarketTemplates([]));
+    return () => controller.abort();
   }, []);
 
   const filteredMarket = useMemo(() => {
@@ -162,6 +161,9 @@ export default function CanvasEditor({
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [zen, setZen] = useState(false);
+
+  // Orbit motion toggle (anti-distracción by default)
+  const [orbitMotion, setOrbitMotion] = useState(false);
 
   // Keep local doc in sync when studio.doc changes from outside
   useEffect(() => {
@@ -222,7 +224,22 @@ export default function CanvasEditor({
     });
   }, [onChange]);
 
-  // Keyboard shortcuts: Ctrl/Cmd+Z / Shift+Z / Y + Zen (Ctrl/Cmd+\)
+  // Zen toggle helper (consistente)
+  const toggleZen = useCallback(() => {
+    setZen((v) => {
+      const next = !v;
+      if (next) {
+        setLeftOpen(false);
+        setRightOpen(false);
+      } else {
+        setLeftOpen(true);
+        setRightOpen(true);
+      }
+      return next;
+    });
+  }, []);
+
+  // Keyboard shortcuts: Ctrl/Cmd+Z / Shift+Z / Y + Zen (Ctrl/Cmd+\) + Orbit motion (Ctrl/Cmd+B)
   useEffect(() => {
     const onKeyDown = (ev) => {
       const isMod = ev.ctrlKey || ev.metaKey;
@@ -238,17 +255,16 @@ export default function CanvasEditor({
         redo();
       } else if (k === "\\") {
         ev.preventDefault();
-        setZen(v => {
-  const next = !v;
-  if (next) { setLeftOpen(false); setRightOpen(false); }
-  return next;
-});
+        toggleZen();
+      } else if (k === "b") {
+        ev.preventDefault();
+        setOrbitMotion((v) => !v);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, toggleZen]);
 
   /* ----------------------------- Actions ----------------------------- */
 
@@ -315,51 +331,60 @@ export default function CanvasEditor({
 
   /* ----------------------------- Layout ----------------------------- */
 
-  
   return (
-  <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
-    <AureaFXStyles />
+    <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
+      <AureaFXStyles />
 
-    {/* ======== TOP HUD (mini) ======== */}
-    
       {/* ======== TOP HUD (mini) ======== */}
       <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2">
-         <GlowButton onClick={undo} disabled={!undoRef.current.length} title="Undo (Ctrl/Cmd+Z)">
-  Undo
-</GlowButton>
+          <GlowButton onClick={undo} disabled={!undoRef.current.length} title="Undo (Ctrl/Cmd+Z)">
+            Undo
+          </GlowButton>
 
-<GlowButton onClick={redo} disabled={!redoRef.current.length} title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)">
-  Redo
-</GlowButton>
+          <GlowButton
+            onClick={redo}
+            disabled={!redoRef.current.length}
+            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
+          >
+            Redo
+          </GlowButton>
 
-<GlowButton
-  onClick={() => setZen((v) => !v)}
-  title="Zen (Ctrl/Cmd+\)"
-  variant={zen ? "amber" : "soft"}
->
-  ZEN
-</GlowButton>
+          <GlowButton
+            onClick={toggleZen}
+            title="Zen (Ctrl/Cmd+\)"
+            variant={zen ? "amber" : "soft"}
+          >
+            ZEN
+          </GlowButton>
 
-<GlowButton onClick={() => setLeftOpen((v) => !v)} title="Mostrar/Ocultar panel izquierdo">
-  {leftOpen ? "Ocultar panel" : "Panel"}
-</GlowButton>
+          <GlowButton
+            onClick={() => setOrbitMotion((v) => !v)}
+            title="Orbit motion (Ctrl/Cmd+B)"
+            variant={orbitMotion ? "sky" : "soft"}
+          >
+            Orbit
+          </GlowButton>
 
-<GlowButton onClick={() => setRightOpen((v) => !v)} title="Mostrar/Ocultar inspector">
-  {rightOpen ? "Ocultar inspector" : "Inspector"}
-</GlowButton>
+          <GlowButton onClick={() => setLeftOpen((v) => !v)} title="Mostrar/Ocultar panel izquierdo">
+            {leftOpen ? "Ocultar panel" : "Panel"}
+          </GlowButton>
 
+          <GlowButton onClick={() => setRightOpen((v) => !v)} title="Mostrar/Ocultar inspector">
+            {rightOpen ? "Ocultar inspector" : "Inspector"}
+          </GlowButton>
         </div>
 
         {hasDoc ? (
           <div className="pointer-events-none text-white/70 text-xs px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-            {localDoc.meta.w}×{localDoc.meta.h} • zoom {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
+            {localDoc.meta.w}×{localDoc.meta.h} • zoom{" "}
+            {localDoc.meta.zoom?.toFixed?.(2) ?? "—"}
           </div>
         ) : null}
       </div>
 
       {/* ======== MAIN STAGE WRAP ======== */}
-<div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
+      <div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
         {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
         {!zen && (
           <div className="absolute left-3 top-16 bottom-3 z-20 w-[64px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
@@ -371,6 +396,7 @@ export default function CanvasEditor({
                 setLeftOpen(true);
               }}
               icon="▦"
+              orbitMotion={orbitMotion}
             />
             <DockBtn
               label="Elementos"
@@ -380,6 +406,7 @@ export default function CanvasEditor({
                 setLeftOpen(true);
               }}
               icon="⬡"
+              orbitMotion={orbitMotion}
             />
             <DockBtn
               label="Texto"
@@ -389,6 +416,7 @@ export default function CanvasEditor({
                 setLeftOpen(true);
               }}
               icon="T"
+              orbitMotion={orbitMotion}
             />
             <DockBtn
               label="Subidos"
@@ -398,6 +426,7 @@ export default function CanvasEditor({
                 setLeftOpen(true);
               }}
               icon="⇪"
+              orbitMotion={orbitMotion}
             />
             <DockBtn
               label="Marca"
@@ -407,6 +436,7 @@ export default function CanvasEditor({
                 setLeftOpen(true);
               }}
               icon="♥"
+              orbitMotion={orbitMotion}
             />
             <DockBtn
               label="Apps"
@@ -416,6 +446,7 @@ export default function CanvasEditor({
                 setLeftOpen(true);
               }}
               icon="⌁"
+              orbitMotion={orbitMotion}
             />
           </div>
         )}
@@ -459,116 +490,116 @@ export default function CanvasEditor({
             <div className="p-3 h-full overflow-auto">
               {!hasDoc ? (
                 <div className="text-white/60 text-sm">
-                  Crea un documento para comenzar. <span className="text-white/40">(Diseño → elige una plantilla)</span>
+                  Crea un documento para comenzar.{" "}
+                  <span className="text-white/40">(Diseño → elige una plantilla)</span>
                 </div>
               ) : null}
 
-              {/*🔥🔥🔥🔥🔥🔥🔥🔥 DESIGN: templates 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥*/}
+              {/* DESIGN: templates */}
+              {activeTool === "design" && (
+                <div className="space-y-3">
+                  {/* Header tipo Canva */}
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-white text-lg font-semibold leading-tight">
+                      ¿Qué vamos a diseñar hoy?
+                    </div>
+                    <div className="text-white/50 text-xs mt-1">
+                      Busca dentro del catálogo de plantillas.
+                    </div>
 
-             {activeTool === "design" && (
-  <div className="space-y-3">
-    {/* Header tipo Canva */}
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="text-white text-lg font-semibold leading-tight">
-        ¿Qué vamos a diseñar hoy?
-      </div>
-      <div className="text-white/50 text-xs mt-1">
-        Busca dentro del catálogo de plantillas.
-      </div>
+                    <div className="mt-3">
+                      <input
+                        value={q}
+                        onChange={(e) => setQ(e.target.value)}
+                        placeholder="Busca plantillas: doctores, cosmética, arquitectura, contabilidad..."
+                        className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none focus:border-sky-400/40"
+                      />
+                    </div>
+                  </div>
 
-      <div className="mt-3">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Busca plantillas: doctores, cosmética, arquitectura, contabilidad..."
-          className="w-full rounded-2xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm outline-none focus:border-sky-400/40"
-        />
-      </div>
-    </div>
+                  {/* Sección: Formatos */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-white/80 text-sm font-semibold">Formatos</div>
+                    <div className="text-white/40 text-[11px]">Tamaño + fondo</div>
+                  </div>
 
-    {/* Sección: Formatos */}
-    <div className="flex items-center justify-between">
-      <div className="text-white/80 text-sm font-semibold">Formatos</div>
-      <div className="text-white/40 text-[11px]">Tamaño + fondo</div>
-    </div>
+                  <div className="space-y-2">
+                    {(formats || []).map((f) => (
+                      <button
+                        key={f.id}
+                        className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
+                        onClick={() => createFromTemplate(f)}
+                      >
+                        <div className="text-white font-medium">{f.title}</div>
+                        <div className="text-white/60 text-xs">{f.subtitle}</div>
+                      </button>
+                    ))}
+                  </div>
 
-    <div className="space-y-2">
-      {(formats || []).map((f) => (
-        <button
-          key={f.id}
-          className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-          onClick={() => createFromTemplate(f)}
-        >
-          <div className="text-white font-medium">{f.title}</div>
-          <div className="text-white/60 text-xs">{f.subtitle}</div>
-        </button>
-      ))}
-    </div>
+                  {/* Sección: Plantillas Marketplace */}
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="text-white/80 text-sm font-semibold">Plantillas</div>
+                    <div className="text-white/40 text-[11px]">
+                      {filteredMarket.length} encontradas
+                    </div>
+                  </div>
 
-    {/* Sección: Plantillas Marketplace */}
-    <div className="mt-2 flex items-center justify-between">
-      <div className="text-white/80 text-sm font-semibold">Plantillas</div>
-      <div className="text-white/40 text-[11px]">
-        {filteredMarket.length} encontradas
-      </div>
-    </div>
+                  {filteredMarket.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">
+                      No hay plantillas que coincidan con tu búsqueda.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {filteredMarket.map((t) => (
+                        <button
+                          key={t.id}
+                          className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left
+                            hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
+                          onClick={() => {
+                            // Paso 3: aquí aplicaremos doc real de plantilla
+                            console.log("template click:", t.id);
+                          }}
+                          title={t.title}
+                        >
+                          <div className="relative w-full aspect-[4/3] bg-black/30 overflow-hidden">
+                            <img
+                              src={t.preview || "/templates/previews/demo.jpg"}
+                              alt={t.title}
+                              className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-300 group-hover:scale-[1.04]"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
+                            <div className="absolute bottom-2 left-2 right-2">
+                              <div className="text-white text-xs font-semibold truncate">
+                                {t.title}
+                              </div>
+                              <div className="text-white/60 text-[10px] truncate">
+                                {t.subtitle || t.category || "Plantilla"}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-    {filteredMarket.length === 0 ? (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">
-        No hay plantillas que coincidan con tu búsqueda.
-      </div>
-    ) : (
-      <div className="grid grid-cols-2 gap-2">
-        {filteredMarket.map((t) => (
-          <button
-            key={t.id}
-className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left
-hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
-            onClick={() => {
-              // 🔥 aquí aún NO aplicamos doc (eso es el Paso 3)
-              // por ahora solo vamos a verificar que renderiza bonito
-              console.log("template click:", t.id);
-            }}
-            title={t.title}
-          >
-            <div className="relative w-full aspect-[4/3] bg-black/30 overflow-hidden">
-              <img
-                src={t.preview || "/templates/previews/demo.jpg"}
-                alt={t.title}
-                className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-300 group-hover:scale-[1.04]"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
-              <div className="absolute bottom-2 left-2 right-2">
-                <div className="text-white text-xs font-semibold truncate">
-                  {t.title}
+                  {/* Mis diseños */}
+                  <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
+                    <div className="text-white font-semibold text-sm">Mis diseños</div>
+                    <div className="text-white/50 text-xs">
+                      (Luego conectamos historial por proyecto)
+                    </div>
+                    <div className="mt-3 text-white/40 text-[11px]">
+                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
+                    </div>
+                  </div>
                 </div>
-                <div className="text-white/60 text-[10px] truncate">
-                  {t.subtitle || t.category || "Plantilla"}
-                </div>
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-    )}
+              )}
 
-    {/* Mis diseños (lo dejamos igual) */}
-    <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
-      <div className="text-white font-semibold text-sm">Mis diseños</div>
-      <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
-      <div className="mt-3 text-white/40 text-[11px]">
-        Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
-        <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-        <span className="text-white/60">Ctrl/Cmd+\</span> Zen
-      </div>
-    </div>
-  </div>
-)}
-
-
-
-              {/* ELEMENTS: preview blocks */}
+              {/* ELEMENTS */}
               {activeTool === "elements" && (
                 <div className="space-y-3">
                   <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
@@ -582,23 +613,20 @@ hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60p
                       + Rect
                     </button>
                     <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs opacity-70"
+                      className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70"
                       disabled
-                      title="Próximamente"
                     >
                       + Circle
                     </button>
                     <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bgwhite/10 p-3 text-white text-xs opacity-70"
+                      className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70"
                       disabled
-                      title="Próximamente"
                     >
                       + Line
                     </button>
                     <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs opacity-70"
+                      className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70"
                       disabled
-                      title="Próximamente"
                     >
                       + Icon
                     </button>
@@ -613,7 +641,7 @@ hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60p
                 </div>
               )}
 
-              {/* TEXT: preview */}
+              {/* TEXT */}
               {activeTool === "text" && (
                 <div className="space-y-3">
                   <button
@@ -641,25 +669,31 @@ hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60p
                 </div>
               )}
 
-              {/* Uploads / Brand / Apps: preview only */}
+              {/* Uploads / Brand / Apps */}
               {activeTool === "uploads" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Subidos</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: aquí irá drag & drop + librería.</div>
+                  <div className="text-white/50 text-xs mt-1">
+                    Preview UI: aquí irá drag & drop + librería.
+                  </div>
                 </div>
               )}
 
               {activeTool === "brand" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Marca</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: logos, paleta, tipografías guardadas.</div>
+                  <div className="text-white/50 text-xs mt-1">
+                    Preview UI: logos, paleta, tipografías guardadas.
+                  </div>
                 </div>
               )}
 
               {activeTool === "apps" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Apps</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: generador IA, QR, mockups, etc.</div>
+                  <div className="text-white/50 text-xs mt-1">
+                    Preview UI: generador IA, QR, mockups, etc.
+                  </div>
                 </div>
               )}
             </div>
@@ -690,7 +724,7 @@ hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60p
           </div>
         )}
 
-        {/* ======== CANVAS AREA (full) ======== */}
+        {/* ======== CANVAS AREA ======== */}
         <div className="absolute inset-0">
           {!hasDoc ? (
             <div className="h-full flex items-center justify-center">
@@ -698,12 +732,13 @@ hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60p
                 <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
                 <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
                 <div className="text-white/40 text-xs mt-2">
-                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode
+                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode •{" "}
+                  <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
                 </div>
               </div>
             </div>
           ) : (
-<StudioCanvas doc={localDoc} onChange={commit} compact={true} />
+            <StudioCanvas doc={localDoc} onChange={commit} compact={true} />
           )}
         </div>
       </div>
@@ -713,22 +748,31 @@ hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60p
 
 /* ----------------------------- Dock Button ----------------------------- */
 
-function DockBtn({ label, icon, active, onClick }) {
+function DockBtn({ label, icon, active, onClick, orbitMotion }) {
   return (
     <button
       onClick={onClick}
       className={`relative w-[44px] h-[44px] rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition overflow-hidden
-      ${active ? "bg-amber-500/15 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}
+      ${
+        active
+          ? "bg-amber-500/15 border-amber-400/30 text-amber-100"
+          : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+      }
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      {active ? <span className="pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border" /> : null}
+      {active ? (
+        <span
+          className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border ${
+            orbitMotion ? "aurea-orbit-always" : ""
+          }`}
+        />
+      ) : null}
       <div className="relative z-10 text-sm leading-none">{icon}</div>
       <div className="relative z-10 text-[9px] leading-none">{label}</div>
     </button>
   );
 }
-
 
 /* ----------------------------- Inspector Mini ----------------------------- */
 
@@ -778,38 +822,36 @@ function InspectorMini({ doc, onChange }) {
       <div className="rounded-xl border border-white/10 bg-white/5 p-3">
         <div className="text-white/70 text-xs">Capas</div>
         <div className="mt-2 space-y-1 max-h-[240px] overflow-auto pr-1">
-          {doc.nodes
-            .slice()
-            .map((n, idx) => {
-              const isSel = doc.selectedId === n.id;
-              const label =
-                n.type === "text"
-                  ? (n.text || "Texto").slice(0, 18)
-                  : n.type === "rect"
-                  ? "Shape"
-                  : n.type;
+          {doc.nodes.slice().map((n, idx) => {
+            const isSel = doc.selectedId === n.id;
+            const label =
+              n.type === "text"
+                ? (n.text || "Texto").slice(0, 18)
+                : n.type === "rect"
+                ? "Shape"
+                : n.type;
 
-              return (
-                <button
-                  key={n.id}
-                  className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
-                    isSel
-                      ? "bg-sky-500/10 border-sky-400/30 text-white"
-                      : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
-                  }`}
-                  onClick={() => onChange({ ...doc, selectedId: n.id })}
-                  title={label}
-                >
-                  <div className="text-xs flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
-                      {n.type}
-                    </span>
-                    <span className="truncate max-w-[160px]">{label}</span>
-                  </div>
-                  <div className="text-[10px] text-white/40">#{idx + 1}</div>
-                </button>
-              );
-            })}
+            return (
+              <button
+                key={n.id}
+                className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
+                  isSel
+                    ? "bg-sky-500/10 border-sky-400/30 text-white"
+                    : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
+                }`}
+                onClick={() => onChange({ ...doc, selectedId: n.id })}
+                title={label}
+              >
+                <div className="text-xs flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
+                    {n.type}
+                  </span>
+                  <span className="truncate max-w-[160px]">{label}</span>
+                </div>
+                <div className="text-[10px] text-white/40">#{idx + 1}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -872,7 +914,9 @@ function InspectorMini({ doc, onChange }) {
                       type="number"
                       className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
                       value={selected.cornerRadius || 0}
-                      onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })}
+                      onChange={(e) =>
+                        patchSelected({ cornerRadius: Number(e.target.value) || 0 })
+                      }
                     />
                   </div>
 
@@ -909,15 +953,10 @@ function InspectorMini({ doc, onChange }) {
     </div>
   );
 }
+
 /* ----------------------------- Premium FX: GlowButton ----------------------------- */
 
-function GlowButton({
-  children,
-  className = "",
-  variant = "soft", // soft | amber | danger | sky
-  disabled = false,
-  ...props
-}) {
+function GlowButton({ children, className = "", variant = "soft", disabled = false, ...props }) {
   const v =
     variant === "amber"
       ? "aurea-glow-amber"
@@ -928,21 +967,21 @@ function GlowButton({
       : "aurea-glow-soft";
 
   return (
-  <button
-    {...props}
-    disabled={disabled}
-    className={`group relative isolate overflow-hidden rounded-xl border px-3 py-2 text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md transition
+    <button
+      {...props}
+      disabled={disabled}
+      className={`group relative isolate overflow-hidden rounded-xl border px-3 py-2 text-xs shadow-[0_14px_35px_rgba(0,0,0,.35)] backdrop-blur-md transition
       ${disabled ? "opacity-50 cursor-not-allowed" : "hover:scale-[1.01] active:scale-[0.99]"}
       ${v} ${className}`}
-  >
-    {/* Orbit / border light */}
-    <span className="pointer-events-none absolute inset-0 rounded-xl aurea-orbit-border opacity-0 group-hover:opacity-100 transition" />
-    {/* Soft glow wash */}
-    <span className="pointer-events-none absolute -inset-10 aurea-glow-wash" />
-    {/* Content */}
-    <span className="relative z-10">{children}</span>
-  </button>
-);
+    >
+      {/* Orbit / border light */}
+      <span className="pointer-events-none absolute inset-0 rounded-xl aurea-orbit-border opacity-0 group-hover:opacity-100 transition" />
+      {/* Soft glow wash */}
+      <span className="pointer-events-none absolute -inset-10 aurea-glow-wash" />
+      {/* Content */}
+      <span className="relative z-10">{children}</span>
+    </button>
+  );
 }
 
 /* ----------------------------- Premium FX: global CSS ----------------------------- */
@@ -998,7 +1037,6 @@ function AureaFXStyles() {
         border-radius: inherit;
         padding: 2px; /* grosor borde */
 
-        /* Puntito dorado */
         background: conic-gradient(
           from var(--aurea-rot),
           rgba(255, 215, 100, 0) 0deg,
@@ -1007,21 +1045,22 @@ function AureaFXStyles() {
           rgba(255, 215, 100, 0) 360deg
         );
 
-        /* Mostrar sólo borde */
-        -webkit-mask: linear-gradient(#000 0 0) content-box,
-          linear-gradient(#000 0 0);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
         -webkit-mask-composite: xor;
         mask-composite: exclude;
 
         filter: drop-shadow(0 0 18px rgba(255, 215, 100, 0.55));
         opacity: 0.95;
-
-        /* No gira si no hay hover */
         animation: none;
       }
 
-      /* ✅ Gira SOLO en hover (requiere "group" en el botón) */
+      /* hover motion (GlowButton usa className group) */
       .group:hover .aurea-orbit-border::before {
+        animation: aurea-rotate 1.2s linear infinite;
+      }
+
+      /* always motion (Dock activo cuando orbitMotion=true) */
+      .aurea-orbit-always::before {
         animation: aurea-rotate 1.2s linear infinite;
       }
 
@@ -1035,7 +1074,8 @@ function AureaFXStyles() {
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .group:hover .aurea-orbit-border::before {
+        .group:hover .aurea-orbit-border::before,
+        .aurea-orbit-always::before {
           animation: none !important;
         }
       }
