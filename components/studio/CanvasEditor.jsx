@@ -34,6 +34,35 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+/**
+ * ✅ FIX PRO: resolver rutas de assets para que SIEMPRE sean absolutas
+ */
+function resolveAssetSrc(src) {
+  if (!src || typeof src !== "string") return src;
+  const s = src.trim();
+  if (!s) return s;
+  if (s.startsWith("data:") || s.startsWith("http://") || s.startsWith("https://")) return s;
+  if (s.startsWith("/")) return s;
+  if (s.startsWith("templates/")) return `/${s}`;
+  if (s.startsWith("assets/")) return `/templates/${s}`;
+  return `/templates/${s.replace(/^\.?\//, "")}`;
+}
+
+function normalizeImageNode(n) {
+  if (!n || n.type !== "image") return n;
+
+  const next = { ...n };
+
+  // soporta varios nombres posibles
+  if (typeof next.src === "string") next.src = resolveAssetSrc(next.src);
+  if (typeof next.imageSrc === "string") next.imageSrc = resolveAssetSrc(next.imageSrc);
+  if (typeof next.url === "string") next.url = resolveAssetSrc(next.url);
+  if (typeof next.href === "string") next.href = resolveAssetSrc(next.href);
+
+  // dataURL no se toca
+  return next;
+}
+
 /** normalizeDoc = seguro anti-bugs */
 function normalizeDoc(input) {
   if (!input) return null;
@@ -107,7 +136,8 @@ async function loadManifest(signal) {
 }
 
 async function loadTemplateDoc(itemPath) {
-  const res = await fetch(itemPath, { cache: "no-store" });
+  const p = resolveAssetSrc(itemPath); // ✅ FIX PRO (por si viene sin /)
+  const res = await fetch(p, { cache: "no-store" });
   if (!res.ok) throw new Error("No se pudo cargar template item");
   return res.json();
 }
@@ -134,10 +164,10 @@ function hashSeed(str) {
 }
 
 const PRO_PALETTES = [
-  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764", accent2: "#38BDF8" }, // Aurea gold + sky
-  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8", accent2: "#A78BFA" }, // Sky + violet
-  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA", accent2: "#FFD764" }, // Violet + gold
-  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399", accent2: "#38BDF8" }, // Emerald + sky
+  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764", accent2: "#38BDF8" },
+  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8", accent2: "#A78BFA" },
+  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA", accent2: "#FFD764" },
+  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399", accent2: "#38BDF8" },
 ];
 
 const PRO_FONTS = [
@@ -157,20 +187,12 @@ function rgba(hex, a = 1) {
 
 function pickTextNodes(doc) {
   const texts = (doc.nodes || []).filter((n) => n.type === "text");
-  // “casi siempre” plantilla = headline, sub, cta
-  return {
-    headline: texts[0] || null,
-    sub: texts[1] || null,
-    cta: texts.length ? texts[texts.length - 1] : null,
-  };
+  const headline = texts[0] || null;
+  const sub = texts[1] || null;
+  const cta = texts[texts.length - 1] || null;
+  return { headline, sub, cta };
 }
 
-/**
- * addDecorPRO:
- * - NO rompe ids de contenido base (para selección / heurísticas)
- * - añade decor con ids nuevos
- * - orden de capas: bg -> deco -> contenido
- */
 function addDecorPRO(doc, seedStr) {
   const seed = hashSeed(seedStr);
   const rnd = mulberry32(seed);
@@ -182,30 +204,28 @@ function addDecorPRO(doc, seedStr) {
 
   const archetypes = ["hud_frame", "soft_card", "diagonal", "badge_top"];
   const arch = archetypes[Math.floor(rnd() * archetypes.length)];
-
   const jitter = (v, amt) => v + (rnd() * 2 - 1) * amt;
 
   const { headline, sub, cta } = pickTextNodes(doc);
 
-  // 1) Restyle contenido (SIN cambiar ids)
-  const content = (doc.nodes || []).map((n) => {
+  const restyled = (doc.nodes || []).map((n) => {
     if (n.type === "text") {
       const isHeadline = headline && n.id === headline.id;
       const isSub = sub && n.id === sub.id;
       const isCTA = cta && n.id === cta.id;
 
       const baseSize = n.fontSize || 28;
-      const scale = isHeadline ? (0.95 + rnd() * 0.25) : isSub ? (0.92 + rnd() * 0.18) : (0.9 + rnd() * 0.16);
+      const scale = isHeadline ? (0.92 + rnd() * 0.25) : isSub ? (0.9 + rnd() * 0.18) : 0.9 + rnd() * 0.16;
 
-      const pickFill =
-        isHeadline && rnd() > 0.55 ? pal.accent : isCTA && rnd() > 0.65 ? pal.accent2 : pal.fg;
+      const fill = isHeadline && rnd() > 0.55 ? pal.accent : isCTA && rnd() > 0.6 ? pal.fg : pal.fg;
 
-      const opacity = isSub ? 0.72 + rnd() * 0.18 : isCTA ? 0.82 + rnd() * 0.14 : 0.92 + rnd() * 0.08;
+      const opacity = isSub ? 0.72 + rnd() * 0.18 : isCTA ? 0.85 + rnd() * 0.12 : 0.92 + rnd() * 0.08;
 
       return {
         ...n,
+        id: uid(),
         fontFamily: font,
-        fill: pickFill.startsWith("rgba") ? pickFill : rgba(pickFill, opacity),
+        fill: fill.includes("rgba") ? fill : rgba(fill, opacity),
         fontSize: Math.max(14, Math.round(baseSize * scale)),
         x: Math.round(jitter(n.x || 0, isHeadline ? 8 : 14)),
         y: Math.round(jitter(n.y || 0, isHeadline ? 8 : 14)),
@@ -216,6 +236,7 @@ function addDecorPRO(doc, seedStr) {
       const alpha = 0.06 + rnd() * 0.12;
       return {
         ...n,
+        id: uid(),
         fill: `rgba(255,255,255,${alpha.toFixed(3)})`,
         cornerRadius: Math.round((n.cornerRadius || 18) * (0.9 + rnd() * 0.6)),
         x: Math.round(jitter(n.x || 0, 10)),
@@ -223,10 +244,10 @@ function addDecorPRO(doc, seedStr) {
       };
     }
 
-    return n;
+    // ✅ asegura que imágenes también queden normalizadas
+    return normalizeImageNode({ ...n, id: uid() });
   });
 
-  // 2) Fondo PRO con gradiente (listening false para no estorbar)
   const bgGradient = {
     id: uid(),
     type: "rect",
@@ -240,17 +261,9 @@ function addDecorPRO(doc, seedStr) {
 
     fillLinearGradientStartPoint: { x: 0, y: 0 },
     fillLinearGradientEndPoint: { x: W, y: H },
-    fillLinearGradientColorStops: [
-      0,
-      pal.bg,
-      0.55,
-      rgba(pal.accent2, 0.10),
-      1,
-      rgba(pal.accent, 0.08),
-    ],
+    fillLinearGradientColorStops: [0, pal.bg, 0.55, rgba(pal.accent2, 0.1), 1, rgba(pal.accent, 0.08)],
   };
 
-  // 3) Deco HUD / marketing (listening false)
   const deco = [];
 
   if (arch === "hud_frame" || rnd() > 0.55) {
@@ -321,32 +334,30 @@ function addDecorPRO(doc, seedStr) {
   }
 
   if (arch === "badge_top" || rnd() > 0.5) {
-    deco.push(
-      {
-        id: uid(),
-        type: "rect",
-        x: 70,
-        y: 66,
-        width: Math.round(180 + rnd() * 120),
-        height: 48,
-        fill: rgba(pal.accent, 0.18),
-        cornerRadius: 16,
-        draggable: false,
-        listening: false,
-      },
-      {
-        id: uid(),
-        type: "text",
-        x: 88,
-        y: 79,
-        text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
-        fontSize: 18,
-        fontFamily: font,
-        fill: rgba(pal.fg, 0.92),
-        draggable: false,
-        listening: false,
-      }
-    );
+    deco.push({
+      id: uid(),
+      type: "rect",
+      x: 70,
+      y: 66,
+      width: Math.round(180 + rnd() * 120),
+      height: 48,
+      fill: rgba(pal.accent, 0.18),
+      cornerRadius: 16,
+      draggable: false,
+      listening: false,
+    });
+    deco.push({
+      id: uid(),
+      type: "text",
+      x: 88,
+      y: 79,
+      text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
+      fontSize: 18,
+      fontFamily: font,
+      fill: rgba(pal.fg, 0.92),
+      draggable: false,
+      listening: false,
+    });
   }
 
   const dots = Math.round(14 + rnd() * 26);
@@ -359,19 +370,19 @@ function addDecorPRO(doc, seedStr) {
       y: Math.round(rnd() * (H - s)),
       width: s,
       height: s,
-      fill: rgba(rnd() > 0.7 ? pal.accent2 : pal.accent, 0.10 + rnd() * 0.18),
+      fill: rgba(rnd() > 0.7 ? pal.accent2 : pal.accent, 0.1 + rnd() * 0.18),
       cornerRadius: 999,
       draggable: false,
       listening: false,
     });
   }
 
-  // 4) Acomodo “campaña” para texto (sin depender de comparar text string)
-  const placed = content.map((n) => {
+  const nodes2 = restyled.map((n) => {
     if (n.type !== "text") return n;
-    const isHeadline = headline && n.id === headline.id;
-    const isSub = sub && n.id === sub.id;
-    const isCTA = cta && n.id === cta.id;
+
+    const isHeadline = headline && n.text && headline.text && n.text === headline.text;
+    const isSub = sub && n.text && sub.text && n.text === sub.text;
+    const isCTA = cta && n.text && cta.text && n.text === cta.text;
 
     if (isHeadline) return { ...n, x: Math.round(W * 0.12), y: Math.round(H * 0.18), fill: rgba(pal.fg, 0.95) };
     if (isSub) return { ...n, x: Math.round(W * 0.12), y: Math.round(H * 0.27), fill: rgba(pal.fg, 0.75) };
@@ -389,13 +400,12 @@ function addDecorPRO(doc, seedStr) {
     return n;
   });
 
-  // 5) Orden de capas: fondo -> deco -> contenido
-  const finalNodes = [bgGradient, ...deco, ...placed];
+  const finalNodes = [bgGradient, ...deco, ...nodes2];
 
   return {
     ...doc,
     meta: { ...doc.meta, bg: pal.bg },
-    nodes: finalNodes,
+    nodes: finalNodes.map(normalizeImageNode), // ✅ FIX PRO final
     selectedId: null,
   };
 }
@@ -406,16 +416,8 @@ function applyProVariation(baseDoc, seedStr) {
 
 /* ----------------------------- Component ----------------------------- */
 
-export default function CanvasEditor({
-  doc,
-  onChange,
-  formats = DEFAULT_FORMATS,
-  onNewFromTemplate,
-  compact = false,
-}) {
+export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS, onNewFromTemplate, compact = false }) {
   const externalDoc = doc || null;
-
-  /* ----------------------------- Templates Marketplace State ----------------------------- */
 
   const [marketTemplates, setMarketTemplates] = useState([]);
   const [q, setQ] = useState("");
@@ -424,7 +426,16 @@ export default function CanvasEditor({
   useEffect(() => {
     const controller = new AbortController();
     loadManifest(controller.signal)
-      .then((m) => setMarketTemplates(Array.isArray(m.items) ? m.items : []))
+      .then((m) => {
+        const items = Array.isArray(m.items) ? m.items : [];
+        // ✅ normaliza preview y itemPath por si vienen relativos
+        const fixed = items.map((t) => ({
+          ...t,
+          preview: resolveAssetSrc(t.preview || ""),
+          itemPath: resolveAssetSrc(t.itemPath || ""),
+        }));
+        setMarketTemplates(fixed);
+      })
       .catch(() => setMarketTemplates([]));
     return () => controller.abort();
   }, []);
@@ -443,40 +454,25 @@ export default function CanvasEditor({
     });
   }, [marketTemplates, q]);
 
-  // Local doc (single source for editor)
   const [localDoc, setLocalDoc] = useState(() => normalizeDoc(externalDoc));
 
-  // Undo/Redo stacks
   const undoRef = useRef([]);
   const redoRef = useRef([]);
 
-  // Panels (Canva-like)
-  const [activeTool, setActiveTool] = useState("design"); // design | elements | text | uploads | brand | apps
+  const [activeTool, setActiveTool] = useState("design");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [zen, setZen] = useState(false);
 
-  // Orbit motion toggle (anti-distracción by default)
   const [orbitMotion, setOrbitMotion] = useState(false);
 
-  // ✅ PRO sync: si cambia doc externo, sincroniza completo (sin loop)
-  const lastExternalKeyRef = useRef("");
   useEffect(() => {
     const next = normalizeDoc(externalDoc);
-
-    // key estable para evitar resets innecesarios
-    const key = next
-      ? `${next.meta?.presetKey || ""}|${next.meta?.w}x${next.meta?.h}|${(next.nodes || []).length}|${next.selectedId || ""}`
-      : "null";
-
-    if (key === lastExternalKeyRef.current) return;
-    lastExternalKeyRef.current = key;
-
     setLocalDoc(next);
     undoRef.current = [];
     redoRef.current = [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalDoc]);
+  }, [externalDoc?.meta?.presetKey, externalDoc?.meta?.w, externalDoc?.meta?.h]);
 
   const hasDoc = !!localDoc;
 
@@ -491,7 +487,6 @@ export default function CanvasEditor({
       }
 
       setLocalDoc((prev) => {
-        // ✅ Undo stack SOLO cuando no es silent
         if (!opts.silent && prev) {
           undoRef.current.push(prev);
           if (undoRef.current.length > 80) undoRef.current.shift();
@@ -529,7 +524,6 @@ export default function CanvasEditor({
     });
   }, [onChange]);
 
-  // Zen toggle helper (consistente)
   const toggleZen = useCallback(() => {
     setZen((v) => {
       const next = !v;
@@ -544,7 +538,6 @@ export default function CanvasEditor({
     });
   }, []);
 
-  // Keyboard shortcuts: Ctrl/Cmd+Z / Shift+Z / Y + Zen (Ctrl/Cmd+\) + Orbit motion (Ctrl/Cmd+B)
   useEffect(() => {
     const onKeyDown = (ev) => {
       const isMod = ev.ctrlKey || ev.metaKey;
@@ -639,11 +632,13 @@ export default function CanvasEditor({
   const applyTemplateVariation = useCallback(
     async (tpl, i) => {
       if (!tpl?.itemPath) return;
+
       const base = await loadTemplateDoc(tpl.itemPath);
       const fmt = (formats || []).find((f) => f.id === tpl.formatId) || null;
 
-      // ✅ ids nuevos SOLO para nodes base de template (para evitar colisiones)
-      const baseNodes = Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [];
+      const baseNodes = Array.isArray(base.nodes)
+        ? base.nodes.map((n) => normalizeImageNode({ ...n, id: uid() }))
+        : [];
 
       const baseDoc = normalizeDoc({
         meta: {
@@ -663,7 +658,6 @@ export default function CanvasEditor({
 
       undoRef.current = [];
       redoRef.current = [];
-      setSelectedTemplate(tpl);
       commit(proDoc, { silent: true });
     },
     [commit, formats]
@@ -690,11 +684,7 @@ export default function CanvasEditor({
             ZEN
           </GlowButton>
 
-          <GlowButton
-            onClick={() => setOrbitMotion((v) => !v)}
-            title="Orbit motion (Ctrl/Cmd+B)"
-            variant={orbitMotion ? "sky" : "soft"}
-          >
+          <GlowButton onClick={() => setOrbitMotion((v) => !v)} title="Orbit motion (Ctrl/Cmd+B)" variant={orbitMotion ? "sky" : "soft"}>
             Orbit
           </GlowButton>
 
@@ -716,7 +706,7 @@ export default function CanvasEditor({
 
       {/* ======== MAIN STAGE WRAP ======== */}
       <div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
-        {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
+        {/* ======== CANVA-DOCK (izquierda) ======== */}
         {!zen && (
           <div className="absolute left-3 top-16 bottom-3 z-20 w-[78px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
             <DockBtn label="Diseño" active={activeTool === "design"} onClick={() => { setActiveTool("design"); setLeftOpen(true); }} icon="▦" orbitMotion={orbitMotion} />
@@ -728,7 +718,7 @@ export default function CanvasEditor({
           </div>
         )}
 
-        {/* ======== LEFT DRAWER (retraíble) ======== */}
+        {/* ======== LEFT DRAWER ======== */}
         {!zen && leftOpen && (
           <div className="absolute left-[84px] top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
@@ -747,18 +737,10 @@ export default function CanvasEditor({
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                  onClick={resetDoc}
-                  title="Reset documento"
-                >
+                <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]" onClick={resetDoc} title="Reset documento">
                   Reset
                 </button>
-                <button
-                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                  onClick={() => setLeftOpen(false)}
-                  title="Cerrar panel"
-                >
+                <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]" onClick={() => setLeftOpen(false)} title="Cerrar panel">
                   ✕
                 </button>
               </div>
@@ -767,8 +749,7 @@ export default function CanvasEditor({
             <div className="p-3 h-full overflow-auto">
               {!hasDoc ? (
                 <div className="text-white/60 text-sm">
-                  Crea un documento para comenzar.{" "}
-                  <span className="text-white/40">(Diseño → elige una plantilla)</span>
+                  Crea un documento para comenzar. <span className="text-white/40">(Diseño → elige una plantilla)</span>
                 </div>
               ) : null}
 
@@ -796,11 +777,7 @@ export default function CanvasEditor({
 
                   <div className="space-y-2">
                     {(formats || []).map((f) => (
-                      <button
-                        key={f.id}
-                        className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                        onClick={() => createFromFormat(f)}
-                      >
+                      <button key={f.id} className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3" onClick={() => createFromFormat(f)}>
                         <div className="text-white font-medium">{f.title}</div>
                         <div className="text-white/60 text-xs">{f.subtitle}</div>
                       </button>
@@ -813,9 +790,7 @@ export default function CanvasEditor({
                   </div>
 
                   {filteredMarket.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">
-                      No hay plantillas que coincidan con tu búsqueda.
-                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">No hay plantillas que coincidan con tu búsqueda.</div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {filteredMarket.map((t) => (
@@ -835,7 +810,7 @@ export default function CanvasEditor({
                         >
                           <div className="relative w-full aspect-[4/3] bg-black/30 overflow-hidden">
                             <img
-                              src={t.preview || "/templates/previews/demo.jpg"}
+                              src={resolveAssetSrc(t.preview || "/templates/previews/demo.jpg")}
                               alt={t.title}
                               className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-300 group-hover:scale-[1.04]"
                               loading="lazy"
@@ -843,9 +818,7 @@ export default function CanvasEditor({
                             <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
                             <div className="absolute bottom-2 left-2 right-2">
                               <div className="text-white text-xs font-semibold truncate">{t.title}</div>
-                              <div className="text-white/60 text-[10px] truncate">
-                                {t.subtitle || t.category || "Plantilla"}
-                              </div>
+                              <div className="text-white/60 text-[10px] truncate">{t.subtitle || t.category || "Plantilla"}</div>
                             </div>
                           </div>
                         </button>
@@ -885,25 +858,19 @@ export default function CanvasEditor({
                     <div className="text-white font-semibold text-sm">Mis diseños</div>
                     <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
                     <div className="mt-3 text-white/40 text-[11px]">
-                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
+                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo • <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen • <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* ELEMENTS */}
               {activeTool === "elements" && (
                 <div className="space-y-3">
                   <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <button
-                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs"
-                      onClick={addShape}
-                      disabled={!hasDoc}
-                      title="Agregar rect"
-                    >
+                    <button className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs" onClick={addShape} disabled={!hasDoc} title="Agregar rect">
                       + Rect
                     </button>
                     <button className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70" disabled>
@@ -924,13 +891,10 @@ export default function CanvasEditor({
                 </div>
               )}
 
+              {/* TEXT */}
               {activeTool === "text" && (
                 <div className="space-y-3">
-                  <button
-                    className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm"
-                    onClick={addText}
-                    disabled={!hasDoc}
-                  >
+                  <button className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm" onClick={addText} disabled={!hasDoc}>
                     + Agregar texto
                   </button>
 
@@ -975,27 +939,17 @@ export default function CanvasEditor({
           </div>
         )}
 
-        {/* ======== RIGHT DRAWER (Inspector retraíble) ======== */}
+        {/* ======== RIGHT DRAWER (Inspector) ======== */}
         {!zen && rightOpen && (
           <div className="absolute right-3 top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
               <div className="text-white font-semibold text-sm">Inspector</div>
-              <button
-                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                onClick={() => setRightOpen(false)}
-                title="Cerrar inspector"
-              >
+              <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]" onClick={() => setRightOpen(false)} title="Cerrar inspector">
                 ✕
               </button>
             </div>
 
-            <div className="p-3 h-full overflow-auto">
-              {!localDoc ? (
-                <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div>
-              ) : (
-                <InspectorMini doc={localDoc} onChange={commit} />
-              )}
-            </div>
+            <div className="p-3 h-full overflow-auto">{!localDoc ? <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div> : <InspectorMini doc={localDoc} onChange={commit} />}</div>
           </div>
         )}
 
@@ -1007,8 +961,7 @@ export default function CanvasEditor({
                 <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
                 <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
                 <div className="text-white/40 text-xs mt-2">
-                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode •{" "}
-                  <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
+                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode • <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
                 </div>
               </div>
             </div>
@@ -1028,21 +981,12 @@ function DockBtn({ label, icon, active, onClick, orbitMotion }) {
     <button
       onClick={onClick}
       className={`group relative w-[60px] h-[58px] rounded-2xl border flex flex-col items-center justify-center gap-1 transition overflow-hidden
-      ${
-        active
-          ? "bg-amber-500/15 border-amber-400/30 text-amber-100"
-          : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
-      }
+      ${active ? "bg-amber-500/15 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      <span
-        className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition
-        ${orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-      />
-
+      <span className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition ${orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
       <span className="pointer-events-none absolute -inset-10 aurea-glow-wash opacity-40 group-hover:opacity-70 transition" />
-
       <div className="relative z-10 text-[18px] leading-none">{icon}</div>
       <div className="relative z-10 text-[10px] leading-none tracking-wide">{label}</div>
     </button>
@@ -1057,7 +1001,12 @@ function InspectorMini({ doc, onChange }) {
     return doc.nodes.find((n) => n.id === doc.selectedId) || null;
   }, [doc]);
 
-  const patchDoc = useCallback((patch) => onChange({ ...doc, ...patch }), [doc, onChange]);
+  const patchDoc = useCallback(
+    (patch) => {
+      onChange({ ...doc, ...patch });
+    },
+    [doc, onChange]
+  );
 
   function patchSelected(patch) {
     if (!selected) return;
@@ -1095,27 +1044,19 @@ function InspectorMini({ doc, onChange }) {
           {doc.nodes.slice().map((n, idx) => {
             const isSel = doc.selectedId === n.id;
             const label =
-              n.type === "text"
-                ? (n.text || "Texto").slice(0, 18)
-                : n.type === "rect"
-                ? "Shape"
-                : n.type;
+              n.type === "text" ? (n.text || "Texto").slice(0, 18) : n.type === "rect" ? "Shape" : n.type;
 
             return (
               <button
                 key={n.id}
                 className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
-                  isSel
-                    ? "bg-sky-500/10 border-sky-400/30 text-white"
-                    : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
+                  isSel ? "bg-sky-500/10 border-sky-400/30 text-white" : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
                 }`}
                 onClick={() => onChange({ ...doc, selectedId: n.id })}
                 title={label}
               >
                 <div className="text-xs flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">
-                    {n.type}
-                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px]">{n.type}</span>
                   <span className="truncate max-w-[160px]">{label}</span>
                 </div>
                 <div className="text-[10px] text-white/40">#{idx + 1}</div>
@@ -1202,16 +1143,10 @@ function InspectorMini({ doc, onChange }) {
             )}
 
             <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
-                onClick={duplicate}
-              >
+              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={duplicate}>
                 Duplicar
               </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs"
-                onClick={deleteSelected}
-              >
+              <button className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs" onClick={deleteSelected}>
                 Eliminar
               </button>
             </div>
