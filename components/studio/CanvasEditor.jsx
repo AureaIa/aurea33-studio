@@ -112,7 +112,7 @@ async function loadTemplateDoc(itemPath) {
   return res.json();
 }
 
-/* ----------------------------- PRO Variations ----------------------------- */
+/* ----------------------------- PRO Variations Engine ----------------------------- */
 
 function mulberry32(seed) {
   let t = seed >>> 0;
@@ -134,10 +134,10 @@ function hashSeed(str) {
 }
 
 const PRO_PALETTES = [
-  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764" }, // Aurea gold
-  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8" }, // Sky pro
-  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA" }, // Violet premium
-  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399" }, // Emerald
+  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764", accent2: "#38BDF8" }, // Aurea gold + sky
+  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8", accent2: "#A78BFA" }, // Sky + violet
+  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA", accent2: "#FFD764" }, // Violet + gold
+  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399", accent2: "#38BDF8" }, // Emerald + sky
 ];
 
 const PRO_FONTS = [
@@ -146,38 +146,75 @@ const PRO_FONTS = [
   "SF Pro Display, Inter, system-ui, -apple-system, Segoe UI, Roboto",
 ];
 
-function applyProVariation(baseDoc, seedStr) {
+function rgba(hex, a = 1) {
+  const h = (hex || "#000000").replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function pickTextNodes(doc) {
+  const texts = (doc.nodes || []).filter((n) => n.type === "text");
+  const headline = texts[0] || null;
+  const sub = texts[1] || null;
+  const cta = texts[texts.length - 1] || null;
+  return { headline, sub, cta };
+}
+
+function addDecorPRO(doc, seedStr) {
   const seed = hashSeed(seedStr);
   const rnd = mulberry32(seed);
   const pal = PRO_PALETTES[Math.floor(rnd() * PRO_PALETTES.length)];
   const font = PRO_FONTS[Math.floor(rnd() * PRO_FONTS.length)];
 
+  const W = doc?.meta?.w || 1080;
+  const H = doc?.meta?.h || 1080;
+
+  // Archetypes de composición (para que no sea “solo cambiar color”)
+  const archetypes = ["hud_frame", "soft_card", "diagonal", "badge_top"];
+  const arch = archetypes[Math.floor(rnd() * archetypes.length)];
+
   const jitter = (v, amt) => v + (rnd() * 2 - 1) * amt;
 
-  const nodes = (baseDoc.nodes || []).map((n) => {
+  // 1) Re-estiliza nodos existentes
+  const { headline, sub, cta } = pickTextNodes(doc);
+
+  const restyled = (doc.nodes || []).map((n) => {
     if (n.type === "text") {
-      const big = (n.fontSize || 24) >= 70;
-      const accentChance = rnd();
-      const alpha = 0.62 + rnd() * 0.25;
+      const isHeadline = headline && n.id === headline.id;
+      const isSub = sub && n.id === sub.id;
+      const isCTA = cta && n.id === cta.id;
+
+      const baseSize = n.fontSize || 28;
+      const scale =
+        isHeadline ? (0.92 + rnd() * 0.25) : isSub ? (0.9 + rnd() * 0.18) : (0.9 + rnd() * 0.16);
+
+      const fill =
+        isHeadline && rnd() > 0.55 ? pal.accent : isCTA && rnd() > 0.6 ? pal.fg : pal.fg;
+
+      const opacity =
+        isSub ? 0.72 + rnd() * 0.18 : isCTA ? 0.85 + rnd() * 0.12 : 0.92 + rnd() * 0.08;
 
       return {
         ...n,
         id: uid(),
         fontFamily: font,
-        fill: big && accentChance > 0.72 ? pal.accent : n.fill?.includes("rgba") ? `rgba(248,250,255,${alpha})` : pal.fg,
-        fontSize: Math.max(14, Math.round((n.fontSize || 24) * (0.92 + rnd() * 0.22))),
-        x: Math.round(jitter(n.x || 0, big ? 10 : 16)),
-        y: Math.round(jitter(n.y || 0, big ? 10 : 16)),
+        fill: fill.includes("rgba") ? fill : rgba(fill, opacity),
+        fontSize: Math.max(14, Math.round(baseSize * scale)),
+        x: Math.round(jitter(n.x || 0, isHeadline ? 8 : 14)),
+        y: Math.round(jitter(n.y || 0, isHeadline ? 8 : 14)),
       };
     }
 
     if (n.type === "rect") {
-      const alpha = 0.05 + rnd() * 0.10;
+      const alpha = 0.06 + rnd() * 0.12;
       return {
         ...n,
         id: uid(),
         fill: `rgba(255,255,255,${alpha.toFixed(3)})`,
-        cornerRadius: Math.round((n.cornerRadius || 18) * (0.85 + rnd() * 0.5)),
+        cornerRadius: Math.round((n.cornerRadius || 18) * (0.9 + rnd() * 0.6)),
         x: Math.round(jitter(n.x || 0, 10)),
         y: Math.round(jitter(n.y || 0, 10)),
       };
@@ -186,15 +223,189 @@ function applyProVariation(baseDoc, seedStr) {
     return { ...n, id: uid() };
   });
 
+  // 2) Fondo PRO: “gradient overlay” (sin depender de imágenes)
+  // Nota: si StudioCanvas no soporta fillLinearGradient*, no pasa nada: queda como fill sólido.
+  const bgGradient = {
+    id: uid(),
+    type: "rect",
+    x: 0,
+    y: 0,
+    width: W,
+    height: H,
+    fill: pal.bg,
+    draggable: false,
+    listening: false,
+
+    // Konva props (si las soportas en StudioCanvas)
+    fillLinearGradientStartPoint: { x: 0, y: 0 },
+    fillLinearGradientEndPoint: { x: W, y: H },
+    fillLinearGradientColorStops: [
+      0,
+      pal.bg,
+      0.55,
+      rgba(pal.accent2, 0.10),
+      1,
+      rgba(pal.accent, 0.08),
+    ],
+  };
+
+  // 3) UI elements / “MKT PRO”: marcos, barras, badges, partículas, líneas HUD
+  const deco = [];
+
+  // Marco HUD
+  if (arch === "hud_frame" || rnd() > 0.55) {
+    const pad = Math.round(44 + rnd() * 22);
+    deco.push(
+      {
+        id: uid(),
+        type: "rect",
+        x: pad,
+        y: pad,
+        width: W - pad * 2,
+        height: H - pad * 2,
+        fill: "rgba(255,255,255,0.00)",
+        stroke: rgba(pal.fg, 0.14),
+        strokeWidth: 2,
+        cornerRadius: 28,
+        draggable: false,
+        listening: false,
+      },
+      {
+        id: uid(),
+        type: "rect",
+        x: pad + 10,
+        y: pad + 10,
+        width: W - (pad + 10) * 2,
+        height: H - (pad + 10) * 2,
+        fill: "rgba(255,255,255,0.00)",
+        stroke: rgba(pal.accent, 0.18),
+        strokeWidth: 2,
+        cornerRadius: 22,
+        draggable: false,
+        listening: false,
+      }
+    );
+  }
+
+  // Barra inferior tipo CTA base
+  if (arch === "soft_card" || rnd() > 0.45) {
+    const bw = Math.round(W * (0.62 + rnd() * 0.22));
+    const bh = Math.round(92 + rnd() * 30);
+    deco.push({
+      id: uid(),
+      type: "rect",
+      x: Math.round((W - bw) / 2),
+      y: Math.round(H - bh - (70 + rnd() * 30)),
+      width: bw,
+      height: bh,
+      fill: rgba("#FFFFFF", 0.06),
+      cornerRadius: 26,
+      draggable: false,
+      listening: false,
+    });
+  }
+
+  // Banda diagonal elegante
+  if (arch === "diagonal" || rnd() > 0.62) {
+    deco.push({
+      id: uid(),
+      type: "rect",
+      x: Math.round(-W * 0.1),
+      y: Math.round(H * (0.18 + rnd() * 0.12)),
+      width: Math.round(W * (1.2)),
+      height: Math.round(120 + rnd() * 110),
+      fill: rgba(pal.accent, 0.06),
+      rotation: -12 + rnd() * 10,
+      cornerRadius: 36,
+      draggable: false,
+      listening: false,
+    });
+  }
+
+  // Badge superior izquierdo
+  if (arch === "badge_top" || rnd() > 0.5) {
+    deco.push({
+      id: uid(),
+      type: "rect",
+      x: 70,
+      y: 66,
+      width: Math.round(180 + rnd() * 120),
+      height: 48,
+      fill: rgba(pal.accent, 0.18),
+      cornerRadius: 16,
+      draggable: false,
+      listening: false,
+    });
+    deco.push({
+      id: uid(),
+      type: "text",
+      x: 88,
+      y: 79,
+      text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
+      fontSize: 18,
+      fontFamily: font,
+      fill: rgba(pal.fg, 0.92),
+      draggable: false,
+      listening: false,
+    });
+  }
+
+  // Partículas / “grain dots” (sin circle: usamos rect chiquitos con cornerRadius alto)
+  const dots = Math.round(14 + rnd() * 26);
+  for (let i = 0; i < dots; i++) {
+    const s = Math.round(6 + rnd() * 10);
+    deco.push({
+      id: uid(),
+      type: "rect",
+      x: Math.round(rnd() * (W - s)),
+      y: Math.round(rnd() * (H - s)),
+      width: s,
+      height: s,
+      fill: rgba(rnd() > 0.7 ? pal.accent2 : pal.accent, 0.10 + rnd() * 0.18),
+      cornerRadius: 999,
+      draggable: false,
+      listening: false,
+    });
+  }
+
+  // 4) Acomodo inteligente de textos si existen (para que se sienta “campaña”)
+  const nodes2 = restyled.map((n) => {
+    if (n.type !== "text") return n;
+
+    const isHeadline = headline && n.text && headline.text && n.text === headline.text;
+    const isSub = sub && n.text && sub.text && n.text === sub.text;
+    const isCTA = cta && n.text && cta.text && n.text === cta.text;
+
+    if (isHeadline) return { ...n, x: Math.round(W * 0.12), y: Math.round(H * 0.18), fill: rgba(pal.fg, 0.95) };
+    if (isSub) return { ...n, x: Math.round(W * 0.12), y: Math.round(H * 0.27), fill: rgba(pal.fg, 0.75) };
+
+    if (isCTA) {
+      // CTA centrado en barra inferior
+      return {
+        ...n,
+        x: Math.round(W * 0.18),
+        y: Math.round(H * 0.78),
+        fontSize: Math.max(16, Math.round((n.fontSize || 26) * (0.9 + rnd() * 0.12))),
+        fill: rgba(pal.fg, 0.82),
+      };
+    }
+
+    return n;
+  });
+
+  // 5) Orden de capas: fondo -> deco -> contenido
+  const finalNodes = [bgGradient, ...deco, ...nodes2];
+
   return {
-    ...baseDoc,
-    meta: {
-      ...baseDoc.meta,
-      bg: pal.bg,
-    },
-    nodes,
+    ...doc,
+    meta: { ...doc.meta, bg: pal.bg },
+    nodes: finalNodes,
     selectedId: null,
   };
+}
+
+function applyProVariation(baseDoc, seedStr) {
+  return addDecorPRO(baseDoc, seedStr);
 }
 
 /* ----------------------------- Component ----------------------------- */
@@ -212,8 +423,6 @@ export default function CanvasEditor({
 
   const [marketTemplates, setMarketTemplates] = useState([]);
   const [q, setQ] = useState("");
-
-  // ✅ Template seleccionado (para Variaciones PRO)
   const [selectedTemplate, setSelectedTemplate] = useState(null);
 
   useEffect(() => {
@@ -233,6 +442,7 @@ export default function CanvasEditor({
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
+
       return hay.includes(qq);
     });
   }, [marketTemplates, q]);
@@ -356,7 +566,7 @@ export default function CanvasEditor({
 
   /* ----------------------------- Actions ----------------------------- */
 
-  const createFromTemplate = (t) => {
+  const createFromFormat = (t) => {
     const next = makeEmptyDoc(t);
     undoRef.current = [];
     redoRef.current = [];
@@ -419,6 +629,35 @@ export default function CanvasEditor({
     });
   };
 
+  const applyTemplateVariation = useCallback(
+    async (tpl, i) => {
+      if (!tpl?.itemPath) return;
+      const base = await loadTemplateDoc(tpl.itemPath);
+      const fmt = (formats || []).find((f) => f.id === tpl.formatId) || null;
+
+      const baseDoc = normalizeDoc({
+        meta: {
+          w: fmt?.w ?? base?.meta?.w ?? 1080,
+          h: fmt?.h ?? base?.meta?.h ?? 1080,
+          bg: fmt?.bg ?? base?.meta?.bg ?? "#0B1220",
+          zoom: 1,
+          panX: 0,
+          panY: 0,
+          presetKey: `${tpl.id}::v${i}`,
+        },
+        nodes: Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [],
+        selectedId: null,
+      });
+
+      const proDoc = applyProVariation(baseDoc, `${tpl.id}::v${i}`);
+
+      undoRef.current = [];
+      redoRef.current = [];
+      commit(proDoc, { silent: true });
+    },
+    [commit, formats]
+  );
+
   /* ----------------------------- Layout ----------------------------- */
 
   return (
@@ -432,7 +671,11 @@ export default function CanvasEditor({
             Undo
           </GlowButton>
 
-          <GlowButton onClick={redo} disabled={!redoRef.current.length} title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)">
+          <GlowButton
+            onClick={redo}
+            disabled={!redoRef.current.length}
+            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
+          >
             Redo
           </GlowButton>
 
@@ -609,7 +852,7 @@ export default function CanvasEditor({
                       <button
                         key={f.id}
                         className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
-                        onClick={() => createFromTemplate(f)}
+                        onClick={() => createFromFormat(f)}
                       >
                         <div className="text-white font-medium">{f.title}</div>
                         <div className="text-white/60 text-xs">{f.subtitle}</div>
@@ -633,37 +876,11 @@ export default function CanvasEditor({
                         <button
                           key={t.id}
                           className="group rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition overflow-hidden text-left
-                          hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
+                            hover:scale-[1.02] hover:ring-1 hover:ring-amber-400/25 hover:shadow-[0_18px_60px_rgba(0,0,0,.55)]"
                           onClick={async () => {
                             try {
                               setSelectedTemplate(t);
-
-                              // 1) carga el doc base del template
-                              const base = await loadTemplateDoc(t.itemPath);
-
-                              // 2) resuelve el formato (si trae formatId)
-                              const fmt = (formats || []).find((f) => f.id === t.formatId) || null;
-
-                              const baseDoc = normalizeDoc({
-                                meta: {
-                                  w: fmt?.w ?? base?.meta?.w ?? 1080,
-                                  h: fmt?.h ?? base?.meta?.h ?? 1080,
-                                  bg: fmt?.bg ?? base?.meta?.bg ?? "#0B1220",
-                                  zoom: 1,
-                                  panX: 0,
-                                  panY: 0,
-                                  presetKey: `${t.id}::base`,
-                                },
-                                nodes: Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [],
-                                selectedId: null,
-                              });
-
-                              // 3) aplica una variación PRO por default
-                              const proDoc = applyProVariation(baseDoc, `${t.id}::v0`);
-
-                              undoRef.current = [];
-                              redoRef.current = [];
-                              commit(proDoc, { silent: true });
+                              await applyTemplateVariation(t, 0); // v0 por default
                             } catch (e) {
                               console.error(e);
                             }
@@ -690,7 +907,7 @@ export default function CanvasEditor({
                     </div>
                   )}
 
-                  {/* ✅ Variaciones PRO */}
+                  {/* Variaciones PRO */}
                   {selectedTemplate ? (
                     <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
                       <div className="flex items-center justify-between">
@@ -707,28 +924,7 @@ export default function CanvasEditor({
                             className="rounded-xl border border-white/10 bg-black/20 hover:bg-white/10 text-white/70 text-[11px] py-2"
                             onClick={async () => {
                               try {
-                                const base = await loadTemplateDoc(selectedTemplate.itemPath);
-                                const fmt = (formats || []).find((f) => f.id === selectedTemplate.formatId) || null;
-
-                                const baseDoc = normalizeDoc({
-                                  meta: {
-                                    w: fmt?.w ?? base?.meta?.w ?? 1080,
-                                    h: fmt?.h ?? base?.meta?.h ?? 1080,
-                                    bg: fmt?.bg ?? base?.meta?.bg ?? "#0B1220",
-                                    zoom: 1,
-                                    panX: 0,
-                                    panY: 0,
-                                    presetKey: `${selectedTemplate.id}::v${i}`,
-                                  },
-                                  nodes: Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [],
-                                  selectedId: null,
-                                });
-
-                                const proDoc = applyProVariation(baseDoc, `${selectedTemplate.id}::v${i}`);
-
-                                undoRef.current = [];
-                                redoRef.current = [];
-                                commit(proDoc, { silent: true });
+                                await applyTemplateVariation(selectedTemplate, i);
                               } catch (e) {
                                 console.error(e);
                               }
@@ -782,7 +978,9 @@ export default function CanvasEditor({
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                     <div className="text-white/80 text-sm font-semibold">Panel Elementos</div>
-                    <div className="text-white/50 text-xs mt-1">Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.</div>
+                    <div className="text-white/50 text-xs mt-1">
+                      Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.
+                    </div>
                   </div>
                 </div>
               )}
@@ -893,11 +1091,15 @@ function DockBtn({ label, icon, active, onClick, orbitMotion }) {
     <button
       onClick={onClick}
       className={`group relative w-[60px] h-[58px] rounded-2xl border flex flex-col items-center justify-center gap-1 transition overflow-hidden
-      ${active ? "bg-amber-500/15 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"}
+      ${
+        active
+          ? "bg-amber-500/15 border-amber-400/30 text-amber-100"
+          : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+      }
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      {/* ✅ ORBIT BORDER */}
+      {/* ✅ ORBIT BORDER: hover siempre / “always” cuando orbitMotion=true */}
       <span
         className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition
         ${orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
@@ -1070,7 +1272,10 @@ function InspectorMini({ doc, onChange }) {
             )}
 
             <div className="flex gap-2">
-              <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={duplicate}>
+              <button
+                className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs"
+                onClick={duplicate}
+              >
                 Duplicar
               </button>
               <button
@@ -1107,11 +1312,8 @@ function GlowButton({ children, className = "", variant = "soft", disabled = fal
       ${disabled ? "opacity-50 cursor-not-allowed" : "hover:scale-[1.01] active:scale-[0.99]"}
       ${v} ${className}`}
     >
-      {/* Orbit / border light */}
       <span className="pointer-events-none absolute inset-0 rounded-xl aurea-orbit-border opacity-0 group-hover:opacity-100 transition" />
-      {/* Soft glow wash */}
       <span className="pointer-events-none absolute -inset-10 aurea-glow-wash" />
-      {/* Content */}
       <span className="relative z-10">{children}</span>
     </button>
   );
@@ -1122,19 +1324,18 @@ function GlowButton({ children, className = "", variant = "soft", disabled = fal
 function AureaFXStyles() {
   return (
     <style jsx global>{`
-      /* ===== Base buttons ===== */
       .aurea-glow-soft {
         background: rgba(255, 255, 255, 0.04);
-        border-color: rgba(255, 255, 255, 0.10);
+        border-color: rgba(255, 255, 255, 0.1);
         color: rgba(255, 255, 255, 0.92);
       }
       .aurea-glow-amber {
-        background: rgba(245, 158, 11, 0.10);
+        background: rgba(245, 158, 11, 0.1);
         border-color: rgba(245, 158, 11, 0.25);
         color: rgba(255, 255, 255, 0.95);
       }
       .aurea-glow-sky {
-        background: rgba(56, 189, 248, 0.10);
+        background: rgba(56, 189, 248, 0.1);
         border-color: rgba(56, 189, 248, 0.25);
         color: rgba(255, 255, 255, 0.95);
       }
@@ -1144,27 +1345,24 @@ function AureaFXStyles() {
         color: rgba(255, 255, 255, 0.95);
       }
 
-      /* Soft glow wash */
       .aurea-glow-wash {
         background: radial-gradient(circle at 20% 0%, rgba(255, 215, 100, 0.18), rgba(0, 0, 0, 0) 55%);
         opacity: 0.6;
         transform: translateZ(0);
       }
 
-      /* ✅ Permite animar custom properties en Chrome/Edge */
       @property --aurea-rot {
         syntax: "<angle>";
         inherits: false;
         initial-value: 0deg;
       }
 
-      /* ===== Orbit border (punto recorriendo contorno) ===== */
       .aurea-orbit-border::before {
         content: "";
         position: absolute;
         inset: 0;
         border-radius: inherit;
-        padding: 2px; /* grosor borde */
+        padding: 2px;
 
         background: conic-gradient(
           from var(--aurea-rot),
@@ -1183,12 +1381,10 @@ function AureaFXStyles() {
         animation: none;
       }
 
-      /* hover motion (GlowButton y DockBtn usan className group) */
       .group:hover .aurea-orbit-border::before {
         animation: aurea-rotate 1.2s linear infinite;
       }
 
-      /* always motion (Dock cuando orbitMotion=true) */
       .aurea-orbit-always::before {
         animation: aurea-rotate 1.2s linear infinite;
       }
