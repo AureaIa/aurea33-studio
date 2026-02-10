@@ -1,0 +1,21 @@
+{
+  "meta": { "w": 1280, "h": 720, "bg": "#0A0E18", "zoom": 1, "panX": 0, "panY": 0, "presetKey": "yt_thumb" },
+  "nodes": [
+    { "id": "bg", "type": "image", "x": 0, "y": 0, "width": 1280, "height": 720, "src": "/templates/assets/bg/realestate/realestate_01.jpg", "opacity": 1 },
+
+    { "id": "grad", "type": "rect", "x": 0, "y": 0, "width": 1280, "height": 720, "fill": "rgba(6,10,18,0.55)", "cornerRadius": 0, "opacity": 1 },
+
+    { "id": "frame", "type": "image", "x": 0, "y": 0, "width": 1280, "height": 720, "src": "/templates/assets/shapes/overlays/frame_glow.png", "opacity": 0.25 },
+
+    { "id": "highlight", "type": "rect", "x": 70, "y": 80, "width": 760, "height": 360, "fill": "rgba(255,255,255,0.06)", "cornerRadius": 28, "opacity": 1 },
+
+    { "id": "title", "type": "text", "x": 110, "y": 140, "text": "RESIDENCIA\nDE LUJO", "fontSize": 76, "fontFamily": "Inter, system-ui", "fill": "#F5F3FF", "rotation": 0, "lineHeight": 0.98 },
+    { "id": "sub", "type": "text", "x": 112, "y": 320, "text": "Desde $7.9M • Altabrisa / Mérida", "fontSize": 30, "fontFamily": "Inter, system-ui", "fill": "rgba(245,243,255,0.80)", "rotation": 0, "lineHeight": 1.2 },
+
+    { "id": "pill", "type": "rect", "x": 890, "y": 90, "width": 320, "height": 60, "fill": "rgba(245,158,11,0.18)", "cornerRadius": 999, "opacity": 1 },
+    { "id": "pillText", "type": "text", "x": 930, "y": 108, "text": "LISTING TOP", "fontSize": 24, "fontFamily": "Inter, system-ui", "fill": "#FFF7ED", "rotation": 0, "lineHeight": 1.1 },
+
+    { "id": "cta", "type": "rect", "x": 840, "y": 520, "width": 400, "height": 120, "fill": "rgba(16,185,129,0.14)", "cornerRadius": 28, "opacity": 1 },
+    { "id": "ctaText", "type": "text", "x": 890, "y": 560, "text": "Agenda tour\nWhatsApp", "fontSize": 32, "fontFamily": "Inter, system-ui", "fill": "#D7FFF0", "rotation": 0, "lineHeight": 1.05 }
+  ]
+}

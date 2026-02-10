@@ -1,25 +1,36 @@
 {
   "items": [
     {
-      "id": "cosmetica_glow",
+      "id": "beauty_glow",
       "title": "Cosmética Glow — Promo",
-      "subtitle": "Instagram Post",
-      "category": "Cosmética",
-      "tags": ["promo", "beauty", "glow", "instagram"],
-      "preview": "/templates/previews/cosmetica_glow.jpg",
-      "itemPath": "/templates/items/cosmetica_glow.json",
+      "subtitle": "Beauty / Skincare",
+      "category": "beauty",
+      "tags": ["belleza", "promo", "glow", "spa"],
       "formatId": "ig-post",
+      "itemPath": "/templates/items/cosmetica_glow.json",
+      "preview": "/templates/previews/cosmetica_glow.jpg",
       "proVariations": 24
     },
     {
-      "id": "clinica_recordatorio_cita",
+      "id": "clinic_reminder",
       "title": "Clínica — Recordatorio Cita",
-      "subtitle": "Instagram Story",
-      "category": "Doctores",
-      "tags": ["salud", "cita", "recordatorio", "story"],
-      "preview": "/templates/previews/clinica_recordatorio_cita.jpg",
-      "itemPath": "/templates/items/clinica_recordatorio_cita.json",
+      "subtitle": "Story / WhatsApp",
+      "category": "clinic",
+      "tags": ["clínica", "cita", "recordatorio", "salud"],
       "formatId": "ig-story",
+      "itemPath": "/templates/items/clinica_recordatorio_cita.json",
+      "preview": "/templates/previews/clinica_recordatorio_cita.jpg",
+      "proVariations": 24
+    },
+    {
+      "id": "realestate_luxury",
+      "title": "Real Estate — Luxury Listing",
+      "subtitle": "YouTube / Ads",
+      "category": "realestate",
+      "tags": ["inmobiliaria", "lujo", "venta", "listing"],
+      "formatId": "yt-thumb",
+      "itemPath": "/templates/items/realestate_luxury.json",
+      "preview": "/templates/previews/realestate_luxury.jpg",
       "proVariations": 24
     }
   ]

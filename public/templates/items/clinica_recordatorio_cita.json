@@ -1,0 +1,22 @@
+{
+  "meta": { "w": 1080, "h": 1920, "bg": "#070B12", "zoom": 1, "panX": 0, "panY": 0, "presetKey": "ig_story" },
+  "nodes": [
+    { "id": "bg", "type": "image", "x": 0, "y": 0, "width": 1080, "height": 1920, "src": "/templates/assets/bg/clinic/clinic_01.jpg", "opacity": 1 },
+
+    { "id": "grad", "type": "rect", "x": 0, "y": 0, "width": 1080, "height": 1920, "fill": "rgba(6,10,18,0.55)", "cornerRadius": 0, "opacity": 1 },
+
+    { "id": "hud", "type": "image", "x": 0, "y": 0, "width": 1080, "height": 1920, "src": "/templates/assets/shapes/overlays/hud_lines.png", "opacity": 0.22 },
+
+    { "id": "badge", "type": "rect", "x": 80, "y": 140, "width": 320, "height": 70, "fill": "rgba(96,165,250,0.16)", "cornerRadius": 999, "opacity": 1 },
+    { "id": "badgeText", "type": "text", "x": 120, "y": 160, "text": "RECORDATORIO", "fontSize": 26, "fontFamily": "Inter, system-ui", "fill": "#DCEBFF", "rotation": 0, "lineHeight": 1.1 },
+
+    { "id": "title", "type": "text", "x": 80, "y": 280, "text": "Tu cita está confirmada", "fontSize": 56, "fontFamily": "Inter, system-ui", "fill": "#EAF2FF", "rotation": 0, "lineHeight": 1.1 },
+    { "id": "sub", "type": "text", "x": 82, "y": 360, "text": "Llega 10 min antes • Trae identificación", "fontSize": 30, "fontFamily": "Inter, system-ui", "fill": "rgba(233,238,249,0.80)", "rotation": 0, "lineHeight": 1.2 },
+
+    { "id": "infoCard", "type": "rect", "x": 80, "y": 520, "width": 920, "height": 320, "fill": "rgba(255,255,255,0.06)", "cornerRadius": 28, "opacity": 1 },
+    { "id": "infoText", "type": "text", "x": 120, "y": 575, "text": "📅 Fecha: 10 Feb\n⏰ Hora: 6:30 PM\n📍 Sucursal: Altabrisa\n🩺 Estudio: Tomografía", "fontSize": 34, "fontFamily": "Inter, system-ui", "fill": "#EAF2FF", "rotation": 0, "lineHeight": 1.35 },
+
+    { "id": "cta", "type": "rect", "x": 80, "y": 1600, "width": 920, "height": 120, "fill": "rgba(16,185,129,0.16)", "cornerRadius": 28, "opacity": 1 },
+    { "id": "ctaText", "type": "text", "x": 140, "y": 1640, "text": "¿Dudas? Escríbenos por WhatsApp", "fontSize": 34, "fontFamily": "Inter, system-ui", "fill": "#D7FFF0", "rotation": 0, "lineHeight": 1.2 }
+  ]
+}

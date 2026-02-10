@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Stage, Layer, Rect, Text, Transformer, Line } from "react-konva";
+import { Stage, Layer, Rect, Text, Transformer, Line, Image as KonvaImage } from "react-konva";
 
 /* ----------------------------- Utils ----------------------------- */
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
 const isInputLike = (el) => {
   if (!el) return false;
   const tag = (el.tagName || "").toLowerCase();
@@ -16,7 +17,50 @@ function uid() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/* ----------------------------- Presets (Paso 1) ----------------------------- */
+function safeNum(x, fallback) {
+  return typeof x === "number" && Number.isFinite(x) ? x : fallback;
+}
+
+function safeStr(x, fallback) {
+  return typeof x === "string" && x.length ? x : fallback;
+}
+
+function getImageSrc(n) {
+  return n?.src || n?.imageSrc || n?.url || n?.dataURL || n?.dataUrl || n?.href || null;
+}
+
+/** Hook: carga HTMLImageElement desde src */
+function useHtmlImage(src) {
+  const [img, setImg] = useState(null);
+
+  useEffect(() => {
+    if (!src) {
+      setImg(null);
+      return;
+    }
+
+    // Guard extra: aunque sea "use client", evitamos crashes raros
+    if (typeof window === "undefined") {
+      setImg(null);
+      return;
+    }
+
+    let alive = true;
+    const image = new window.Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => alive && setImg(image);
+    image.onerror = () => alive && setImg(null);
+    image.src = src;
+
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+
+  return img;
+}
+
+/* ----------------------------- Presets ----------------------------- */
 
 const CANVAS_PRESETS = [
   { key: "ig_post", label: "Instagram Post 1:1 (1080×1080)", w: 1080, h: 1080 },
@@ -35,14 +79,73 @@ const presetByWH = (w, h) => {
   return hit?.key || "ig_post";
 };
 
+/* ----------------------------- Image Node (memo) ----------------------------- */
+
+function ImageNode({
+  n,
+  frame,
+  isSpaceDown,
+  editingId,
+  setSelected,
+  setShowProps,
+  screenToDoc,
+  updateNode,
+  onTransformEnd,
+}) {
+  const src = getImageSrc(n);
+  const img = useHtmlImage(src);
+
+  const p = useMemo(() => {
+    const x = frame.x + (n.x || 0) * frame.scale;
+    const y = frame.y + (n.y || 0) * frame.scale;
+    return { x, y };
+  }, [frame.x, frame.y, frame.scale, n.x, n.y]);
+
+  const w = Math.max(10, (n.width || 600) * frame.scale);
+  const h = Math.max(10, (n.height || 600) * frame.scale);
+
+  const opacity = clamp(safeNum(n.opacity, 1), 0, 1);
+  const rotation = safeNum(n.rotation, 0);
+
+  const crop = n.crop && typeof n.crop === "object" ? n.crop : null;
+
+  return (
+    <KonvaImage
+      id={n.id}
+      x={p.x}
+      y={p.y}
+      image={img || undefined}
+      width={w}
+      height={h}
+      rotation={rotation}
+      opacity={opacity}
+      crop={crop || undefined}
+      draggable={!isSpaceDown && !editingId}
+      hitStrokeWidth={12}
+      perfectDrawEnabled={false}
+      onClick={() => {
+        setSelected(n.id);
+        setShowProps(true);
+      }}
+      onTap={() => {
+        setSelected(n.id);
+        setShowProps(true);
+      }}
+      onDragEnd={(e) => {
+        const docPos = screenToDoc(e.target.x(), e.target.y());
+        updateNode(n.id, { x: docPos.x, y: docPos.y });
+      }}
+      onTransformEnd={(e) => onTransformEnd(e, n)}
+    />
+  );
+}
+
 /* ----------------------------- Component ----------------------------- */
 
 export default function StudioCanvas({ doc, onChange, compact = false }) {
   const stageRef = useRef(null);
   const trRef = useRef(null);
   const containerRef = useRef(null);
-
-  /* ----------------------------- Runtime state ----------------------------- */
 
   const [containerSize, setContainerSize] = useState({ w: 1200, h: 800 });
 
@@ -56,7 +159,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [editingBox, setEditingBox] = useState(null);
   const textareaRef = useRef(null);
 
-  // Floating panels (premium)
+  // Floating panels
   const [showProps, setShowProps] = useState(true);
   const [propsMin, setPropsMin] = useState(false);
 
@@ -101,18 +204,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     [commit, metaSafe]
   );
 
-  const setSelected = useCallback(
-    (id) => {
-      commit({ selectedId: id });
-    },
-    [commit]
-  );
+  const setSelected = useCallback((id) => commit({ selectedId: id }), [commit]);
 
   const updateNode = useCallback(
     (id, patch) => {
-      commit({
-        nodes: nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
-      });
+      commit({ nodes: nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
     },
     [commit, nodes]
   );
@@ -127,7 +223,24 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     if (!selectedId) return;
     const n = nodes.find((x) => x.id === selectedId);
     if (!n) return;
-    const copy = { ...n, id: uid(), x: (n.x || 0) + 24, y: (n.y || 0) + 24 };
+
+    const copy = { ...n, id: uid() };
+
+    // Desplazamiento por tipo
+    if (n.type === "line" && Array.isArray(n.points)) {
+      const pts = n.points.slice();
+      for (let i = 0; i < pts.length; i += 2) {
+        pts[i] += 24;
+        pts[i + 1] += 24;
+      }
+      copy.points = pts;
+      delete copy.x;
+      delete copy.y;
+    } else {
+      copy.x = (n.x || 0) + 24;
+      copy.y = (n.y || 0) + 24;
+    }
+
     commit({ nodes: [...nodes, copy], selectedId: copy.id });
   }, [commit, nodes, selectedId]);
 
@@ -136,6 +249,17 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       if (!selectedId) return;
       const n = nodes.find((x) => x.id === selectedId);
       if (!n) return;
+
+      if (n.type === "line" && Array.isArray(n.points)) {
+        const pts = n.points.slice();
+        for (let i = 0; i < pts.length; i += 2) {
+          pts[i] += dx;
+          pts[i + 1] += dy;
+        }
+        updateNode(selectedId, { points: pts });
+        return;
+      }
+
       updateNode(selectedId, { x: (n.x || 0) + dx, y: (n.y || 0) + dy });
     },
     [nodes, selectedId, updateNode]
@@ -143,10 +267,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   /* ----------------------------- Selected model ----------------------------- */
 
-  const selectedNodeModel = useMemo(
-    () => (selectedId ? nodes.find((n) => n.id === selectedId) : null),
-    [nodes, selectedId]
-  );
+  const selectedNodeModel = useMemo(() => (selectedId ? nodes.find((n) => n.id === selectedId) : null), [nodes, selectedId]);
 
   /* ----------------------------- Quick add actions ----------------------------- */
 
@@ -155,17 +276,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     commit({
       nodes: [
         ...nodes,
-        {
-          id,
-          type: "rect",
-          x: 140,
-          y: 140,
-          width: 420,
-          height: 220,
-          fill: "#2B3A67",
-          cornerRadius: 18,
-          rotation: 0,
-        },
+        { id, type: "rect", x: 140, y: 140, width: 420, height: 220, fill: "#2B3A67", cornerRadius: 18, rotation: 0, opacity: 1 },
       ],
       selectedId: id,
     });
@@ -178,18 +289,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     commit({
       nodes: [
         ...nodes,
-        {
-          id,
-          type: "text",
-          x: 160,
-          y: 160,
-          text: "Texto AUREA",
-          fontSize: 56,
-          fontFamily: "Inter, system-ui",
-          fill: "#E9EEF9",
-          rotation: 0,
-          lineHeight: 1.15,
-        },
+        { id, type: "text", x: 160, y: 160, text: "Texto AUREA", fontSize: 56, fontFamily: "Inter, system-ui", fill: "#E9EEF9", rotation: 0, lineHeight: 1.15, opacity: 1 },
       ],
       selectedId: id,
     });
@@ -209,7 +309,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     };
 
     resize();
-
     const ro = new ResizeObserver(resize);
     ro.observe(el);
 
@@ -248,6 +347,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     if (!stage || !tr) return;
 
     const selectedNode = selectedId ? stage.findOne(`#${selectedId}`) : null;
+
     if (selectedNode) {
       tr.nodes([selectedNode]);
       tr.getLayer()?.batchDraw();
@@ -275,6 +375,19 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       return { x: sx, y: sy };
     },
     [frame.x, frame.y, frame.scale]
+  );
+
+  const pointsDocToScreen = useCallback(
+    (pts) => {
+      if (!Array.isArray(pts)) return [];
+      const out = [];
+      for (let i = 0; i < pts.length; i += 2) {
+        const p = docToScreen(pts[i], pts[i + 1]);
+        out.push(p.x, p.y);
+      }
+      return out;
+    },
+    [docToScreen]
   );
 
   /* ----------------------------- Stage interactions ----------------------------- */
@@ -318,18 +431,17 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   const onWheel = useCallback(
     (e) => {
-      if (editingId) return; // prevent misalign while editing
+      if (editingId) return;
       e.evt.preventDefault();
+
       const stage = stageRef.current;
       if (!stage) return;
-
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
       const oldZoom = clamp(zoom, 0.1, 4);
       const direction = e.evt.deltaY > 0 ? -1 : 1;
       const factor = direction > 0 ? 1.08 : 1 / 1.08;
-
       const nextZoom = clamp(oldZoom * factor, 0.1, 4);
 
       const oldScale = frame.baseFit * oldZoom;
@@ -357,21 +469,19 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     [editingId, zoom, frame.baseFit, metaSafe.w, metaSafe.h, containerSize.w, containerSize.h, panX, panY, commitMeta]
   );
 
-  /* ----------------------------- Node transform correctness ----------------------------- */
+  /* ----------------------------- Transform correctness ----------------------------- */
 
   const onTransformEnd = useCallback(
     (e, nodeModel) => {
       const node = e.target;
-
       const scaleX = node.scaleX();
       const scaleY = node.scaleY();
-
       node.scaleX(1);
       node.scaleY(1);
 
       const docPos = screenToDoc(node.x(), node.y());
 
-      if (nodeModel.type === "rect") {
+      if (nodeModel.type === "rect" || nodeModel.type === "image") {
         const newW = Math.max(10, (node.width() * scaleX) / frame.scale);
         const newH = Math.max(10, (node.height() * scaleY) / frame.scale);
 
@@ -395,6 +505,13 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           rotation: node.rotation(),
           fontSize: nextFont,
         });
+        return;
+      }
+
+      // Lines: por ahora NO hacemos resize (Canva-like). Solo guardamos rotación.
+      if (nodeModel.type === "line") {
+        updateNode(nodeModel.id, { rotation: node.rotation() });
+        return;
       }
     },
     [frame.scale, screenToDoc, updateNode]
@@ -451,14 +568,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       setEditingId(null);
       setEditingBox(null);
 
-      if (mode === "commit") {
-        updateNode(id, { text: editingValue });
-      }
+      if (mode === "commit") updateNode(id, { text: editingValue });
     },
     [editingId, editingValue, updateNode]
   );
 
-  // If view changes while editing: commit and close (prevents floating textarea)
   useEffect(() => {
     if (!editingId) return;
     closeTextEditor("commit");
@@ -467,10 +581,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   /* ----------------------------- UI actions ----------------------------- */
 
-  const fitSmart = useCallback(() => {
-    // Perfect fit: zoom=1 (relative), reset pan
-    commitMeta({ panX: 0, panY: 0, zoom: 1 });
-  }, [commitMeta]);
+  const fitSmart = useCallback(() => commitMeta({ panX: 0, panY: 0, zoom: 1 }), [commitMeta]);
 
   const zoomIn = () => commitMeta({ zoom: clamp(zoom + 0.1, 0.1, 4) });
   const zoomOut = () => commitMeta({ zoom: clamp(zoom - 0.1, 0.1, 4) });
@@ -478,8 +589,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const applyPreset = (presetKey) => {
     const p = CANVAS_PRESETS.find((x) => x.key === presetKey);
     if (!p) return;
-
-    // Persist presetKey so select stays controlled
     commitMeta({ presetKey: p.key, w: p.w, h: p.h, panX: 0, panY: 0, zoom: 1 });
     setSelected(null);
   };
@@ -583,8 +692,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     };
   }, [editingId, closeTextEditor, deleteSelected, duplicateSelected, nudgeSelected, selectedId, setSelected, fitSmart]);
 
-  /* ----------------------------- Visual: Futuristic UI helpers ----------------------------- */
-
   const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
   const presetValue = metaSafe.presetKey || presetByWH(metaSafe.w, metaSafe.h);
 
@@ -597,36 +704,22 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-auto">
           <div className="flex gap-2 items-center">
             <div className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 shadow-[0_14px_40px_rgba(0,0,0,.35)] backdrop-blur-md flex items-center gap-2">
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={zoomIn}
-                title="Zoom In (wheel)"
-              >
+              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={zoomIn}>
                 Zoom +
               </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={zoomOut}
-                title="Zoom Out"
-              >
+              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={zoomOut}>
                 Zoom -
               </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={fitSmart}
-                title="Fit (Ctrl/Cmd+0)"
-              >
+              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={fitSmart}>
                 Fit
               </button>
 
               <div className="w-px h-7 bg-white/10 mx-1" />
 
-              {/* Presets */}
               <select
                 className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs outline-none"
                 value={presetValue}
                 onChange={(e) => applyPreset(e.target.value)}
-                title="Tamaño del diseño"
               >
                 {CANVAS_PRESETS.map((p) => (
                   <option key={p.key} value={p.key} className="bg-[#0B1220] text-white">
@@ -635,60 +728,16 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                 ))}
               </select>
 
-              {/* Export */}
-              <button
-                className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs shadow-[0_0_0_1px_rgba(16,185,129,.10)]"
-                onClick={exportPNG}
-                title="Export PNG"
-              >
+              <button className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs" onClick={exportPNG}>
                 Export PNG
               </button>
 
-              {/* Properties Toggle */}
               <button
-                className={`ml-1 px-3 py-2 rounded-xl border text-xs shadow-[0_16px_40px_rgba(0,0,0,.35)] backdrop-blur-md
-                ${
-                  showProps
-                    ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25"
-                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
-                }`}
+                className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md
+                ${showProps ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25" : "bg-white/5 border-white/10 text-white hover:bg-white/10"}`}
                 onClick={() => setShowProps((v) => !v)}
-                title="Mostrar/Ocultar propiedades"
               >
                 Propiedades
-              </button>
-            </div>
-
-            <div className="ml-3 hidden md:flex items-center gap-2 text-[11px] text-white/50">
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Wheel=Zoom</span>
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Space+Drag=Pan</span>
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">DblClick Text=Edit</span>
-              <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">Ctrl/Cmd+0=Fit</span>
-            </div>
-
-            {/* Quick actions (designer-grade) */}
-            <div className="ml-3 hidden lg:flex items-center gap-2">
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={addText}
-                title="Agregar texto"
-              >
-                + Texto
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={addRect}
-                title="Agregar bloque"
-              >
-                + Bloque
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-400/20 hover:bg-rose-500/25 text-rose-100 text-xs disabled:opacity-40"
-                onClick={deleteSelected}
-                disabled={!selectedId}
-                title="Eliminar (Del)"
-              >
-                Eliminar
               </button>
             </div>
           </div>
@@ -731,135 +780,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         />
       )}
 
-      {/* Floating Properties Panel (no more sidebars amontonadas) */}
-      {showProps && selectedNodeModel && (
-        <div className="absolute right-4 top-20 z-30 pointer-events-auto">
-          <div
-            className={`w-[320px] ${propsMin ? "h-[46px]" : "h-auto"} rounded-2xl border border-white/10 bg-[#060A12]/75 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden`}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-amber-400/90 shadow-[0_0_18px_rgba(251,191,36,.55)]" />
-                <div className="text-white/90 text-xs font-semibold tracking-wide">Propiedades</div>
-                <div className="text-white/40 text-[11px]">
-                  {String(selectedNodeModel.type || "").toUpperCase()} • {selectedNodeModel.id.slice(-6)}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                  onClick={() => setPropsMin((v) => !v)}
-                  title="Minimizar"
-                >
-                  {propsMin ? "Expandir" : "Min"}
-                </button>
-                <button
-                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
-                  onClick={() => setShowProps(false)}
-                  title="Cerrar"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            {!propsMin && (
-              <div className="p-3 space-y-3">
-                {/* Position */}
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="text-[11px] text-white/50">
-                    X
-                    <input
-                      className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-                      type="number"
-                      value={Math.round(selectedNodeModel.x || 0)}
-                      onChange={(e) => updateNode(selectedId, { x: Number(e.target.value || 0) })}
-                    />
-                  </label>
-                  <label className="text-[11px] text-white/50">
-                    Y
-                    <input
-                      className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-                      type="number"
-                      value={Math.round(selectedNodeModel.y || 0)}
-                      onChange={(e) => updateNode(selectedId, { y: Number(e.target.value || 0) })}
-                    />
-                  </label>
-                </div>
-
-                {/* Size for rect */}
-                {selectedNodeModel.type === "rect" && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="text-[11px] text-white/50">
-                      Ancho
-                      <input
-                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-                        type="number"
-                        value={Math.round(selectedNodeModel.width || 0)}
-                        onChange={(e) => updateNode(selectedId, { width: Math.max(10, Number(e.target.value || 10)) })}
-                      />
-                    </label>
-                    <label className="text-[11px] text-white/50">
-                      Alto
-                      <input
-                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-                        type="number"
-                        value={Math.round(selectedNodeModel.height || 0)}
-                        onChange={(e) => updateNode(selectedId, { height: Math.max(10, Number(e.target.value || 10)) })}
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {/* Text controls */}
-                {selectedNodeModel.type === "text" && (
-                  <div className="space-y-2">
-                    <label className="text-[11px] text-white/50">
-                      Texto
-                      <input
-                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-                        value={selectedNodeModel.text || ""}
-                        onChange={(e) => updateNode(selectedId, { text: e.target.value })}
-                      />
-                    </label>
-
-                    <label className="text-[11px] text-white/50">
-                      Tamaño
-                      <input
-                        className="mt-1 w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
-                        type="number"
-                        value={Math.round(selectedNodeModel.fontSize || 32)}
-                        onChange={(e) => updateNode(selectedId, { fontSize: clamp(Number(e.target.value || 32), 8, 512) })}
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {/* Common */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                    onClick={duplicateSelected}
-                    title="Duplicar (Ctrl/Cmd+D)"
-                  >
-                    Duplicar
-                  </button>
-                  <button
-                    className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-400/20 hover:bg-rose-500/25 text-rose-100 text-xs"
-                    onClick={deleteSelected}
-                    title="Eliminar (Del)"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <Stage
         ref={stageRef}
         width={containerSize.w}
@@ -877,48 +797,38 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           {/* background */}
           <Rect x={0} y={0} width={containerSize.w} height={containerSize.h} fill="#060A12" listening={false} />
 
-          {/* futuristic grid (lightweight) */}
+          {/* futuristic grid */}
           {Array.from({ length: Math.ceil(containerSize.w / 80) }).map((_, i) => {
             const x = i * 80;
-            return (
-              <Line
-                key={`gv_${i}`}
-                points={[x, 0, x, containerSize.h]}
-                stroke="rgba(255,255,255,0.04)"
-                strokeWidth={1}
-                listening={false}
-              />
-            );
+            return <Line key={`gv_${i}`} points={[x, 0, x, containerSize.h]} stroke="rgba(255,255,255,0.04)" strokeWidth={1} listening={false} />;
           })}
           {Array.from({ length: Math.ceil(containerSize.h / 80) }).map((_, i) => {
             const y = i * 80;
-            return (
-              <Line
-                key={`gh_${i}`}
-                points={[0, y, containerSize.w, y]}
-                stroke="rgba(255,255,255,0.04)"
-                strokeWidth={1}
-                listening={false}
-              />
-            );
+            return <Line key={`gh_${i}`} points={[0, y, containerSize.w, y]} stroke="rgba(255,255,255,0.04)" strokeWidth={1} listening={false} />;
           })}
 
           {/* canvas frame */}
-          <Rect
-            x={frame.x}
-            y={frame.y}
-            width={frame.w}
-            height={frame.h}
-            fill={metaSafe.bg}
-            cornerRadius={22}
-            shadowColor="black"
-            shadowBlur={22}
-            shadowOpacity={0.38}
-            listening={false}
-          />
+          <Rect x={frame.x} y={frame.y} width={frame.w} height={frame.h} fill={metaSafe.bg} cornerRadius={22} shadowColor="black" shadowBlur={22} shadowOpacity={0.38} listening={false} />
 
           {/* nodes */}
           {nodes.map((n) => {
+            if (n.type === "image") {
+              return (
+                <ImageNode
+                  key={n.id}
+                  n={n}
+                  frame={frame}
+                  isSpaceDown={isSpaceDown}
+                  editingId={editingId}
+                  setSelected={setSelected}
+                  setShowProps={setShowProps}
+                  screenToDoc={screenToDoc}
+                  updateNode={updateNode}
+                  onTransformEnd={onTransformEnd}
+                />
+              );
+            }
+
             if (n.type === "rect") {
               const p = docToScreen(n.x || 0, n.y || 0);
               return (
@@ -931,18 +841,15 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   height={(n.height || 100) * frame.scale}
                   fill={n.fill || "#2B3A67"}
                   cornerRadius={(n.cornerRadius || 0) * frame.scale}
-                  rotation={n.rotation || 0}
+                  rotation={safeNum(n.rotation, 0)}
+                  opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
+                  stroke={n.stroke || undefined}
+                  strokeWidth={n.strokeWidth ? n.strokeWidth * frame.scale : undefined}
                   draggable={!isSpaceDown && !editingId}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  onClick={() => {
-                    setSelected(n.id);
-                    setShowProps(true);
-                  }}
-                  onTap={() => {
-                    setSelected(n.id);
-                    setShowProps(true);
-                  }}
+                  onClick={() => setSelected(n.id)}
+                  onTap={() => setSelected(n.id)}
                   onDragEnd={(e) => {
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
@@ -960,22 +867,18 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   id={n.id}
                   x={p.x}
                   y={p.y}
-                  text={n.text || ""}
-                  fontSize={(n.fontSize || 32) * frame.scale}
-                  fontFamily={n.fontFamily || "Inter, system-ui"}
-                  fill={n.fill || "#E9EEF9"}
-                  rotation={n.rotation || 0}
+                  text={safeStr(n.text, "")}
+                  fontSize={safeNum(n.fontSize, 32) * frame.scale}
+                  fontFamily={safeStr(n.fontFamily, "Inter, system-ui")}
+                  fill={safeStr(n.fill, "#E9EEF9")}
+                  rotation={safeNum(n.rotation, 0)}
+                  opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
+                  lineHeight={safeNum(n.lineHeight, 1.2)}
                   draggable={!isSpaceDown && !editingId}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  onClick={() => {
-                    setSelected(n.id);
-                    setShowProps(true);
-                  }}
-                  onTap={() => {
-                    setSelected(n.id);
-                    setShowProps(true);
-                  }}
+                  onClick={() => setSelected(n.id)}
+                  onTap={() => setSelected(n.id)}
                   onDblClick={() => openTextEditor(n)}
                   onDblTap={() => openTextEditor(n)}
                   onDragEnd={(e) => {
@@ -987,10 +890,49 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
               );
             }
 
+            if (n.type === "line") {
+              const pts = pointsDocToScreen(n.points || []);
+              return (
+                <Line
+                  key={n.id}
+                  id={n.id}
+                  points={pts}
+                  stroke={n.stroke || "rgba(255,255,255,0.20)"}
+                  strokeWidth={(n.strokeWidth || 2) * frame.scale}
+                  lineCap={n.lineCap || "round"}
+                  lineJoin={n.lineJoin || "round"}
+                  opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
+                  draggable={!isSpaceDown && !editingId}
+                  hitStrokeWidth={12}
+                  perfectDrawEnabled={false}
+                  onClick={() => setSelected(n.id)}
+                  onTap={() => setSelected(n.id)}
+                  onDragEnd={(e) => {
+                    const node = e.target;
+                    const dxScreen = node.x();
+                    const dyScreen = node.y();
+                    node.x(0);
+                    node.y(0);
+
+                    const dxDoc = dxScreen / frame.scale;
+                    const dyDoc = dyScreen / frame.scale;
+
+                    const ptsDoc = Array.isArray(n.points) ? n.points.slice() : [];
+                    for (let i = 0; i < ptsDoc.length; i += 2) {
+                      ptsDoc[i] += dxDoc;
+                      ptsDoc[i + 1] += dyDoc;
+                    }
+                    updateNode(n.id, { points: ptsDoc });
+                  }}
+                  onTransformEnd={(e) => onTransformEnd(e, n)}
+                />
+              );
+            }
+
             return null;
           })}
 
-          {/* transformer (canva-ish) */}
+          {/* transformer (Canva-ish) */}
           <Transformer
             ref={trRef}
             rotateEnabled
@@ -1012,6 +954,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
               "bottom-center",
             ]}
             boundBoxFunc={(oldBox, newBox) => {
+              // Bloqueo mínimo para evitar 0 size
               if (newBox.width < 20 || newBox.height < 20) return oldBox;
               return newBox;
             }}
