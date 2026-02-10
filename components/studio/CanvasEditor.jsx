@@ -157,12 +157,20 @@ function rgba(hex, a = 1) {
 
 function pickTextNodes(doc) {
   const texts = (doc.nodes || []).filter((n) => n.type === "text");
-  const headline = texts[0] || null;
-  const sub = texts[1] || null;
-  const cta = texts[texts.length - 1] || null;
-  return { headline, sub, cta };
+  // “casi siempre” plantilla = headline, sub, cta
+  return {
+    headline: texts[0] || null,
+    sub: texts[1] || null,
+    cta: texts.length ? texts[texts.length - 1] : null,
+  };
 }
 
+/**
+ * addDecorPRO:
+ * - NO rompe ids de contenido base (para selección / heurísticas)
+ * - añade decor con ids nuevos
+ * - orden de capas: bg -> deco -> contenido
+ */
 function addDecorPRO(doc, seedStr) {
   const seed = hashSeed(seedStr);
   const rnd = mulberry32(seed);
@@ -172,36 +180,32 @@ function addDecorPRO(doc, seedStr) {
   const W = doc?.meta?.w || 1080;
   const H = doc?.meta?.h || 1080;
 
-  // Archetypes de composición (para que no sea “solo cambiar color”)
   const archetypes = ["hud_frame", "soft_card", "diagonal", "badge_top"];
   const arch = archetypes[Math.floor(rnd() * archetypes.length)];
 
   const jitter = (v, amt) => v + (rnd() * 2 - 1) * amt;
 
-  // 1) Re-estiliza nodos existentes
   const { headline, sub, cta } = pickTextNodes(doc);
 
-  const restyled = (doc.nodes || []).map((n) => {
+  // 1) Restyle contenido (SIN cambiar ids)
+  const content = (doc.nodes || []).map((n) => {
     if (n.type === "text") {
       const isHeadline = headline && n.id === headline.id;
       const isSub = sub && n.id === sub.id;
       const isCTA = cta && n.id === cta.id;
 
       const baseSize = n.fontSize || 28;
-      const scale =
-        isHeadline ? (0.92 + rnd() * 0.25) : isSub ? (0.9 + rnd() * 0.18) : (0.9 + rnd() * 0.16);
+      const scale = isHeadline ? (0.95 + rnd() * 0.25) : isSub ? (0.92 + rnd() * 0.18) : (0.9 + rnd() * 0.16);
 
-      const fill =
-        isHeadline && rnd() > 0.55 ? pal.accent : isCTA && rnd() > 0.6 ? pal.fg : pal.fg;
+      const pickFill =
+        isHeadline && rnd() > 0.55 ? pal.accent : isCTA && rnd() > 0.65 ? pal.accent2 : pal.fg;
 
-      const opacity =
-        isSub ? 0.72 + rnd() * 0.18 : isCTA ? 0.85 + rnd() * 0.12 : 0.92 + rnd() * 0.08;
+      const opacity = isSub ? 0.72 + rnd() * 0.18 : isCTA ? 0.82 + rnd() * 0.14 : 0.92 + rnd() * 0.08;
 
       return {
         ...n,
-        id: uid(),
         fontFamily: font,
-        fill: fill.includes("rgba") ? fill : rgba(fill, opacity),
+        fill: pickFill.startsWith("rgba") ? pickFill : rgba(pickFill, opacity),
         fontSize: Math.max(14, Math.round(baseSize * scale)),
         x: Math.round(jitter(n.x || 0, isHeadline ? 8 : 14)),
         y: Math.round(jitter(n.y || 0, isHeadline ? 8 : 14)),
@@ -212,7 +216,6 @@ function addDecorPRO(doc, seedStr) {
       const alpha = 0.06 + rnd() * 0.12;
       return {
         ...n,
-        id: uid(),
         fill: `rgba(255,255,255,${alpha.toFixed(3)})`,
         cornerRadius: Math.round((n.cornerRadius || 18) * (0.9 + rnd() * 0.6)),
         x: Math.round(jitter(n.x || 0, 10)),
@@ -220,11 +223,10 @@ function addDecorPRO(doc, seedStr) {
       };
     }
 
-    return { ...n, id: uid() };
+    return n;
   });
 
-  // 2) Fondo PRO: “gradient overlay” (sin depender de imágenes)
-  // Nota: si StudioCanvas no soporta fillLinearGradient*, no pasa nada: queda como fill sólido.
+  // 2) Fondo PRO con gradiente (listening false para no estorbar)
   const bgGradient = {
     id: uid(),
     type: "rect",
@@ -236,7 +238,6 @@ function addDecorPRO(doc, seedStr) {
     draggable: false,
     listening: false,
 
-    // Konva props (si las soportas en StudioCanvas)
     fillLinearGradientStartPoint: { x: 0, y: 0 },
     fillLinearGradientEndPoint: { x: W, y: H },
     fillLinearGradientColorStops: [
@@ -249,10 +250,9 @@ function addDecorPRO(doc, seedStr) {
     ],
   };
 
-  // 3) UI elements / “MKT PRO”: marcos, barras, badges, partículas, líneas HUD
+  // 3) Deco HUD / marketing (listening false)
   const deco = [];
 
-  // Marco HUD
   if (arch === "hud_frame" || rnd() > 0.55) {
     const pad = Math.round(44 + rnd() * 22);
     deco.push(
@@ -287,7 +287,6 @@ function addDecorPRO(doc, seedStr) {
     );
   }
 
-  // Barra inferior tipo CTA base
   if (arch === "soft_card" || rnd() > 0.45) {
     const bw = Math.round(W * (0.62 + rnd() * 0.22));
     const bh = Math.round(92 + rnd() * 30);
@@ -305,14 +304,13 @@ function addDecorPRO(doc, seedStr) {
     });
   }
 
-  // Banda diagonal elegante
   if (arch === "diagonal" || rnd() > 0.62) {
     deco.push({
       id: uid(),
       type: "rect",
       x: Math.round(-W * 0.1),
       y: Math.round(H * (0.18 + rnd() * 0.12)),
-      width: Math.round(W * (1.2)),
+      width: Math.round(W * 1.2),
       height: Math.round(120 + rnd() * 110),
       fill: rgba(pal.accent, 0.06),
       rotation: -12 + rnd() * 10,
@@ -322,35 +320,35 @@ function addDecorPRO(doc, seedStr) {
     });
   }
 
-  // Badge superior izquierdo
   if (arch === "badge_top" || rnd() > 0.5) {
-    deco.push({
-      id: uid(),
-      type: "rect",
-      x: 70,
-      y: 66,
-      width: Math.round(180 + rnd() * 120),
-      height: 48,
-      fill: rgba(pal.accent, 0.18),
-      cornerRadius: 16,
-      draggable: false,
-      listening: false,
-    });
-    deco.push({
-      id: uid(),
-      type: "text",
-      x: 88,
-      y: 79,
-      text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
-      fontSize: 18,
-      fontFamily: font,
-      fill: rgba(pal.fg, 0.92),
-      draggable: false,
-      listening: false,
-    });
+    deco.push(
+      {
+        id: uid(),
+        type: "rect",
+        x: 70,
+        y: 66,
+        width: Math.round(180 + rnd() * 120),
+        height: 48,
+        fill: rgba(pal.accent, 0.18),
+        cornerRadius: 16,
+        draggable: false,
+        listening: false,
+      },
+      {
+        id: uid(),
+        type: "text",
+        x: 88,
+        y: 79,
+        text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
+        fontSize: 18,
+        fontFamily: font,
+        fill: rgba(pal.fg, 0.92),
+        draggable: false,
+        listening: false,
+      }
+    );
   }
 
-  // Partículas / “grain dots” (sin circle: usamos rect chiquitos con cornerRadius alto)
   const dots = Math.round(14 + rnd() * 26);
   for (let i = 0; i < dots; i++) {
     const s = Math.round(6 + rnd() * 10);
@@ -368,19 +366,17 @@ function addDecorPRO(doc, seedStr) {
     });
   }
 
-  // 4) Acomodo inteligente de textos si existen (para que se sienta “campaña”)
-  const nodes2 = restyled.map((n) => {
+  // 4) Acomodo “campaña” para texto (sin depender de comparar text string)
+  const placed = content.map((n) => {
     if (n.type !== "text") return n;
-
-    const isHeadline = headline && n.text && headline.text && n.text === headline.text;
-    const isSub = sub && n.text && sub.text && n.text === sub.text;
-    const isCTA = cta && n.text && cta.text && n.text === cta.text;
+    const isHeadline = headline && n.id === headline.id;
+    const isSub = sub && n.id === sub.id;
+    const isCTA = cta && n.id === cta.id;
 
     if (isHeadline) return { ...n, x: Math.round(W * 0.12), y: Math.round(H * 0.18), fill: rgba(pal.fg, 0.95) };
     if (isSub) return { ...n, x: Math.round(W * 0.12), y: Math.round(H * 0.27), fill: rgba(pal.fg, 0.75) };
 
     if (isCTA) {
-      // CTA centrado en barra inferior
       return {
         ...n,
         x: Math.round(W * 0.18),
@@ -394,7 +390,7 @@ function addDecorPRO(doc, seedStr) {
   });
 
   // 5) Orden de capas: fondo -> deco -> contenido
-  const finalNodes = [bgGradient, ...deco, ...nodes2];
+  const finalNodes = [bgGradient, ...deco, ...placed];
 
   return {
     ...doc,
@@ -463,14 +459,24 @@ export default function CanvasEditor({
   // Orbit motion toggle (anti-distracción by default)
   const [orbitMotion, setOrbitMotion] = useState(false);
 
-  // Keep local doc in sync when studio.doc changes from outside
+  // ✅ PRO sync: si cambia doc externo, sincroniza completo (sin loop)
+  const lastExternalKeyRef = useRef("");
   useEffect(() => {
     const next = normalizeDoc(externalDoc);
+
+    // key estable para evitar resets innecesarios
+    const key = next
+      ? `${next.meta?.presetKey || ""}|${next.meta?.w}x${next.meta?.h}|${(next.nodes || []).length}|${next.selectedId || ""}`
+      : "null";
+
+    if (key === lastExternalKeyRef.current) return;
+    lastExternalKeyRef.current = key;
+
     setLocalDoc(next);
     undoRef.current = [];
     redoRef.current = [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalDoc?.meta?.presetKey, externalDoc?.meta?.w, externalDoc?.meta?.h]);
+  }, [externalDoc]);
 
   const hasDoc = !!localDoc;
 
@@ -485,6 +491,7 @@ export default function CanvasEditor({
       }
 
       setLocalDoc((prev) => {
+        // ✅ Undo stack SOLO cuando no es silent
         if (!opts.silent && prev) {
           undoRef.current.push(prev);
           if (undoRef.current.length > 80) undoRef.current.shift();
@@ -635,6 +642,9 @@ export default function CanvasEditor({
       const base = await loadTemplateDoc(tpl.itemPath);
       const fmt = (formats || []).find((f) => f.id === tpl.formatId) || null;
 
+      // ✅ ids nuevos SOLO para nodes base de template (para evitar colisiones)
+      const baseNodes = Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [];
+
       const baseDoc = normalizeDoc({
         meta: {
           w: fmt?.w ?? base?.meta?.w ?? 1080,
@@ -645,7 +655,7 @@ export default function CanvasEditor({
           panY: 0,
           presetKey: `${tpl.id}::v${i}`,
         },
-        nodes: Array.isArray(base.nodes) ? base.nodes.map((n) => ({ ...n, id: uid() })) : [],
+        nodes: baseNodes,
         selectedId: null,
       });
 
@@ -653,6 +663,7 @@ export default function CanvasEditor({
 
       undoRef.current = [];
       redoRef.current = [];
+      setSelectedTemplate(tpl);
       commit(proDoc, { silent: true });
     },
     [commit, formats]
@@ -671,11 +682,7 @@ export default function CanvasEditor({
             Undo
           </GlowButton>
 
-          <GlowButton
-            onClick={redo}
-            disabled={!redoRef.current.length}
-            title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)"
-          >
+          <GlowButton onClick={redo} disabled={!redoRef.current.length} title="Redo (Ctrl/Cmd+Y o Ctrl/Cmd+Shift+Z)">
             Redo
           </GlowButton>
 
@@ -712,66 +719,12 @@ export default function CanvasEditor({
         {/* ======== CANVA-DOCK (izquierda, siempre visible) ======== */}
         {!zen && (
           <div className="absolute left-3 top-16 bottom-3 z-20 w-[78px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
-            <DockBtn
-              label="Diseño"
-              active={activeTool === "design"}
-              onClick={() => {
-                setActiveTool("design");
-                setLeftOpen(true);
-              }}
-              icon="▦"
-              orbitMotion={orbitMotion}
-            />
-            <DockBtn
-              label="Elementos"
-              active={activeTool === "elements"}
-              onClick={() => {
-                setActiveTool("elements");
-                setLeftOpen(true);
-              }}
-              icon="⬡"
-              orbitMotion={orbitMotion}
-            />
-            <DockBtn
-              label="Texto"
-              active={activeTool === "text"}
-              onClick={() => {
-                setActiveTool("text");
-                setLeftOpen(true);
-              }}
-              icon="T"
-              orbitMotion={orbitMotion}
-            />
-            <DockBtn
-              label="Subidos"
-              active={activeTool === "uploads"}
-              onClick={() => {
-                setActiveTool("uploads");
-                setLeftOpen(true);
-              }}
-              icon="⇪"
-              orbitMotion={orbitMotion}
-            />
-            <DockBtn
-              label="Marca"
-              active={activeTool === "brand"}
-              onClick={() => {
-                setActiveTool("brand");
-                setLeftOpen(true);
-              }}
-              icon="♥"
-              orbitMotion={orbitMotion}
-            />
-            <DockBtn
-              label="Apps"
-              active={activeTool === "apps"}
-              onClick={() => {
-                setActiveTool("apps");
-                setLeftOpen(true);
-              }}
-              icon="⌁"
-              orbitMotion={orbitMotion}
-            />
+            <DockBtn label="Diseño" active={activeTool === "design"} onClick={() => { setActiveTool("design"); setLeftOpen(true); }} icon="▦" orbitMotion={orbitMotion} />
+            <DockBtn label="Elementos" active={activeTool === "elements"} onClick={() => { setActiveTool("elements"); setLeftOpen(true); }} icon="⬡" orbitMotion={orbitMotion} />
+            <DockBtn label="Texto" active={activeTool === "text"} onClick={() => { setActiveTool("text"); setLeftOpen(true); }} icon="T" orbitMotion={orbitMotion} />
+            <DockBtn label="Subidos" active={activeTool === "uploads"} onClick={() => { setActiveTool("uploads"); setLeftOpen(true); }} icon="⇪" orbitMotion={orbitMotion} />
+            <DockBtn label="Marca" active={activeTool === "brand"} onClick={() => { setActiveTool("brand"); setLeftOpen(true); }} icon="♥" orbitMotion={orbitMotion} />
+            <DockBtn label="Apps" active={activeTool === "apps"} onClick={() => { setActiveTool("apps"); setLeftOpen(true); }} icon="⌁" orbitMotion={orbitMotion} />
           </div>
         )}
 
@@ -822,14 +775,9 @@ export default function CanvasEditor({
               {/* DESIGN: templates */}
               {activeTool === "design" && (
                 <div className="space-y-3">
-                  {/* Header tipo Canva */}
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="text-white text-lg font-semibold leading-tight">
-                      ¿Qué vamos a diseñar hoy?
-                    </div>
-                    <div className="text-white/50 text-xs mt-1">
-                      Busca dentro del catálogo de plantillas.
-                    </div>
+                    <div className="text-white text-lg font-semibold leading-tight">¿Qué vamos a diseñar hoy?</div>
+                    <div className="text-white/50 text-xs mt-1">Busca dentro del catálogo de plantillas.</div>
 
                     <div className="mt-3">
                       <input
@@ -841,7 +789,6 @@ export default function CanvasEditor({
                     </div>
                   </div>
 
-                  {/* Sección: Formatos */}
                   <div className="flex items-center justify-between">
                     <div className="text-white/80 text-sm font-semibold">Formatos</div>
                     <div className="text-white/40 text-[11px]">Tamaño + fondo</div>
@@ -860,7 +807,6 @@ export default function CanvasEditor({
                     ))}
                   </div>
 
-                  {/* Sección: Plantillas Marketplace */}
                   <div className="mt-2 flex items-center justify-between">
                     <div className="text-white/80 text-sm font-semibold">Plantillas</div>
                     <div className="text-white/40 text-[11px]">{filteredMarket.length} encontradas</div>
@@ -880,7 +826,7 @@ export default function CanvasEditor({
                           onClick={async () => {
                             try {
                               setSelectedTemplate(t);
-                              await applyTemplateVariation(t, 0); // v0 por default
+                              await applyTemplateVariation(t, 0);
                             } catch (e) {
                               console.error(e);
                             }
@@ -907,14 +853,11 @@ export default function CanvasEditor({
                     </div>
                   )}
 
-                  {/* Variaciones PRO */}
                   {selectedTemplate ? (
                     <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
                       <div className="flex items-center justify-between">
                         <div className="text-white/80 text-sm font-semibold">Variaciones PRO</div>
-                        <div className="text-white/40 text-[11px]">
-                          {selectedTemplate.proVariations || 24} estilos
-                        </div>
+                        <div className="text-white/40 text-[11px]">{selectedTemplate.proVariations || 24} estilos</div>
                       </div>
 
                       <div className="mt-2 grid grid-cols-4 gap-2">
@@ -938,7 +881,6 @@ export default function CanvasEditor({
                     </div>
                   ) : null}
 
-                  {/* Mis diseños */}
                   <div className="mt-3 p-3 rounded-2xl bg-gradient-to-r from-white/5 to-white/0 border border-white/10">
                     <div className="text-white font-semibold text-sm">Mis diseños</div>
                     <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
@@ -952,7 +894,6 @@ export default function CanvasEditor({
                 </div>
               )}
 
-              {/* ELEMENTS */}
               {activeTool === "elements" && (
                 <div className="space-y-3">
                   <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
@@ -978,14 +919,11 @@ export default function CanvasEditor({
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                     <div className="text-white/80 text-sm font-semibold">Panel Elementos</div>
-                    <div className="text-white/50 text-xs mt-1">
-                      Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.
-                    </div>
+                    <div className="text-white/50 text-xs mt-1">Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.</div>
                   </div>
                 </div>
               )}
 
-              {/* TEXT */}
               {activeTool === "text" && (
                 <div className="space-y-3">
                   <button
@@ -1013,7 +951,6 @@ export default function CanvasEditor({
                 </div>
               )}
 
-              {/* Uploads / Brand / Apps */}
               {activeTool === "uploads" && (
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                   <div className="text-white font-semibold">Subidos</div>
@@ -1099,13 +1036,11 @@ function DockBtn({ label, icon, active, onClick, orbitMotion }) {
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      {/* ✅ ORBIT BORDER: hover siempre / “always” cuando orbitMotion=true */}
       <span
         className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition
         ${orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
       />
 
-      {/* Soft glow wash */}
       <span className="pointer-events-none absolute -inset-10 aurea-glow-wash opacity-40 group-hover:opacity-70 transition" />
 
       <div className="relative z-10 text-[18px] leading-none">{icon}</div>
@@ -1122,12 +1057,7 @@ function InspectorMini({ doc, onChange }) {
     return doc.nodes.find((n) => n.id === doc.selectedId) || null;
   }, [doc]);
 
-  const patchDoc = useCallback(
-    (patch) => {
-      onChange({ ...doc, ...patch });
-    },
-    [doc, onChange]
-  );
+  const patchDoc = useCallback((patch) => onChange({ ...doc, ...patch }), [doc, onChange]);
 
   function patchSelected(patch) {
     if (!selected) return;
