@@ -25,28 +25,43 @@ function safeStr(x, fallback) {
   return typeof x === "string" && x.length ? x : fallback;
 }
 
-/**
- * ✅ FIX PRO: resuelve assets relativos para que SIEMPRE apunten a /templates/...
- * - "assets/bg/x.jpg"        -> "/templates/assets/bg/x.jpg"
- * - "templates/assets/x.jpg" -> "/templates/assets/x.jpg"
- * - "/templates/assets/x.jpg" stays
- * - "http(s)://..." stays
- * - "data:..." stays
- */
-function resolveAssetSrc(src) {
+/** Normaliza rutas de assets para Konva/Next (templates marketplace) */
+function normalizeAssetSrc(src) {
   if (!src || typeof src !== "string") return null;
-  const s = src.trim();
-  if (!s) return null;
-  if (s.startsWith("data:") || s.startsWith("http://") || s.startsWith("https://")) return s;
-  if (s.startsWith("/")) return s;
+
+  // data urls / blobs / http(s)
+  if (
+    src.startsWith("data:") ||
+    src.startsWith("blob:") ||
+    src.startsWith("http://") ||
+    src.startsWith("https://")
+  ) {
+    return src;
+  }
+
+  // ya absoluto del sitio
+  if (src.startsWith("/")) return src;
+
+  // quita ./ inicial
+  let s = src.replace(/^\.\//, "");
+
+  // si viene "templates/assets/..." => "/templates/assets/..."
   if (s.startsWith("templates/")) return `/${s}`;
+
+  // si viene "assets/..." => "/templates/assets/..."
   if (s.startsWith("assets/")) return `/templates/${s}`;
-  return `/templates/${s.replace(/^\.?\//, "")}`;
+
+  // fallback: si viene algo como "bg/beauty_01.jpg" lo intentamos dentro de templates/assets/
+  // (no rompe si no existe, solo no carga)
+  if (!s.includes("/")) return `/templates/assets/${s}`;
+
+  // fallback genérico: lo servimos desde /templates/
+  return `/templates/${s}`;
 }
 
 function getImageSrc(n) {
   const raw = n?.src || n?.imageSrc || n?.url || n?.dataURL || n?.dataUrl || n?.href || null;
-  return resolveAssetSrc(raw);
+  return normalizeAssetSrc(raw);
 }
 
 /** Hook: carga HTMLImageElement desde src */
@@ -58,6 +73,7 @@ function useHtmlImage(src) {
       setImg(null);
       return;
     }
+
     if (typeof window === "undefined") {
       setImg(null);
       return;
@@ -65,8 +81,19 @@ function useHtmlImage(src) {
 
     let alive = true;
     const image = new window.Image();
+
+    // Para mismo dominio no estorba; si algún día sirves assets desde CDN sí ayuda.
     image.crossOrigin = "anonymous";
-    image.onload = () => alive && setImg(image);
+
+    image.onload = async () => {
+      if (!alive) return;
+      // decode ayuda a reducir “parpadeos” en algunos browsers
+      try {
+        if (image.decode) await image.decode();
+      } catch (_) {}
+      if (alive) setImg(image);
+    };
+
     image.onerror = () => alive && setImg(null);
     image.src = src;
 
@@ -97,47 +124,19 @@ const presetByWH = (w, h) => {
   return hit?.key || "ig_post";
 };
 
-/* ----------------------------- Pass-through props helpers ----------------------------- */
-/**
- * ✅ FIX PRO: si un node trae props avanzadas (gradients, shadows, etc),
- * las pasamos al componente Konva (Rect/Text/Line/Image) sin romper lo básico.
- */
-const pickExtraKonvaProps = (n, allow = []) => {
-  const out = {};
-  for (const k of allow) {
-    if (n && Object.prototype.hasOwnProperty.call(n, k)) out[k] = n[k];
-  }
-  return out;
-};
+/* ----------------------------- Image Node (memo) ----------------------------- */
 
-// Rect: gradients + shadows + blur, etc.
-const RECT_EXTRAS = [
-  "listening",
-  "shadowColor",
-  "shadowBlur",
-  "shadowOpacity",
-  "shadowOffsetX",
-  "shadowOffsetY",
-  "fillLinearGradientStartPoint",
-  "fillLinearGradientEndPoint",
-  "fillLinearGradientColorStops",
-  "fillRadialGradientStartPoint",
-  "fillRadialGradientEndPoint",
-  "fillRadialGradientColorStops",
-];
-
-// Text extras (por si luego metes letterSpacing, align, etc.)
-const TEXT_EXTRAS = ["listening", "align", "width", "shadowColor", "shadowBlur", "shadowOpacity", "shadowOffsetX", "shadowOffsetY"];
-
-// Line extras (dash, tension, etc.)
-const LINE_EXTRAS = ["listening", "dash", "dashEnabled", "tension", "bezier"];
-
-// Image extras
-const IMAGE_EXTRAS = ["listening", "shadowColor", "shadowBlur", "shadowOpacity", "shadowOffsetX", "shadowOffsetY"];
-
-/* ----------------------------- Image Node ----------------------------- */
-
-function ImageNode({ n, frame, isSpaceDown, editingId, setSelected, setShowProps, screenToDoc, updateNode, onTransformEnd }) {
+function ImageNode({
+  n,
+  frame,
+  isSpaceDown,
+  editingId,
+  setSelected,
+  setShowProps,
+  screenToDoc,
+  updateNode,
+  onTransformEnd,
+}) {
   const src = getImageSrc(n);
   const img = useHtmlImage(src);
 
@@ -152,9 +151,10 @@ function ImageNode({ n, frame, isSpaceDown, editingId, setSelected, setShowProps
 
   const opacity = clamp(safeNum(n.opacity, 1), 0, 1);
   const rotation = safeNum(n.rotation, 0);
+
   const crop = n.crop && typeof n.crop === "object" ? n.crop : null;
 
-  const extras = pickExtraKonvaProps(n, IMAGE_EXTRAS);
+  const listening = typeof n.listening === "boolean" ? n.listening : true;
 
   return (
     <KonvaImage
@@ -167,15 +167,17 @@ function ImageNode({ n, frame, isSpaceDown, editingId, setSelected, setShowProps
       rotation={rotation}
       opacity={opacity}
       crop={crop || undefined}
-      draggable={!isSpaceDown && !editingId && n?.draggable !== false}
+      draggable={!isSpaceDown && !editingId && listening}
       hitStrokeWidth={12}
       perfectDrawEnabled={false}
-      {...extras}
+      listening={listening}
       onClick={() => {
+        if (!listening) return;
         setSelected(n.id);
         setShowProps(true);
       }}
       onTap={() => {
+        if (!listening) return;
         setSelected(n.id);
         setShowProps(true);
       }}
@@ -209,6 +211,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   // Floating panels
   const [showProps, setShowProps] = useState(true);
+  const [propsMin, setPropsMin] = useState(false);
 
   /* ----------------------------- Doc safe ----------------------------- */
 
@@ -225,7 +228,15 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       panY: typeof m.panY === "number" ? m.panY : 0,
       presetKey: typeof m.presetKey === "string" ? m.presetKey : presetByWH(w, h),
     };
-  }, [doc?.meta?.w, doc?.meta?.h, doc?.meta?.bg, doc?.meta?.zoom, doc?.meta?.panX, doc?.meta?.panY, doc?.meta?.presetKey]);
+  }, [
+    doc?.meta?.w,
+    doc?.meta?.h,
+    doc?.meta?.bg,
+    doc?.meta?.zoom,
+    doc?.meta?.panX,
+    doc?.meta?.panY,
+    doc?.meta?.presetKey,
+  ]);
 
   const nodes = doc?.nodes || [];
   const selectedId = doc?.selectedId || null;
@@ -273,7 +284,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
     const copy = { ...n, id: uid() };
 
-    // Desplazamiento por tipo
     if (n.type === "line" && Array.isArray(n.points)) {
       const pts = n.points.slice();
       for (let i = 0; i < pts.length; i += 2) {
@@ -587,6 +597,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     [editingId, editingValue, updateNode]
   );
 
+  // Si cambian zoom/pan/tamaño mientras editas, commit y cierra para evitar desalineación
   useEffect(() => {
     if (!editingId) return;
     closeTextEditor("commit");
@@ -596,7 +607,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   /* ----------------------------- UI actions ----------------------------- */
 
   const fitSmart = useCallback(() => commitMeta({ panX: 0, panY: 0, zoom: 1 }), [commitMeta]);
-
   const zoomIn = () => commitMeta({ zoom: clamp(zoom + 0.1, 0.1, 4) });
   const zoomOut = () => commitMeta({ zoom: clamp(zoom - 0.1, 0.1, 4) });
 
@@ -713,7 +723,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   return (
     <div ref={containerRef} className="w-full h-full relative select-none">
-      {/* Futuristic top bar */}
       {!compact && (
         <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-auto">
           <div className="flex gap-2 items-center">
@@ -762,7 +771,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         </div>
       )}
 
-      {/* Text Editor Overlay */}
       {editingId && editingBox && (
         <textarea
           ref={textareaRef}
@@ -845,8 +853,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
             if (n.type === "rect") {
               const p = docToScreen(n.x || 0, n.y || 0);
-              const extras = pickExtraKonvaProps(n, RECT_EXTRAS);
-
+              const listening = typeof n.listening === "boolean" ? n.listening : true;
               return (
                 <Rect
                   key={n.id}
@@ -861,12 +868,12 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
                   stroke={n.stroke || undefined}
                   strokeWidth={n.strokeWidth ? n.strokeWidth * frame.scale : undefined}
-                  draggable={!isSpaceDown && !editingId && n?.draggable !== false}
+                  draggable={!isSpaceDown && !editingId && listening}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  {...extras}
-                  onClick={() => setSelected(n.id)}
-                  onTap={() => setSelected(n.id)}
+                  listening={listening}
+                  onClick={() => listening && setSelected(n.id)}
+                  onTap={() => listening && setSelected(n.id)}
                   onDragEnd={(e) => {
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
@@ -878,8 +885,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
             if (n.type === "text") {
               const p = docToScreen(n.x || 0, n.y || 0);
-              const extras = pickExtraKonvaProps(n, TEXT_EXTRAS);
-
+              const listening = typeof n.listening === "boolean" ? n.listening : true;
               return (
                 <Text
                   key={n.id}
@@ -893,14 +899,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   rotation={safeNum(n.rotation, 0)}
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
                   lineHeight={safeNum(n.lineHeight, 1.2)}
-                  draggable={!isSpaceDown && !editingId && n?.draggable !== false}
+                  draggable={!isSpaceDown && !editingId && listening}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  {...extras}
-                  onClick={() => setSelected(n.id)}
-                  onTap={() => setSelected(n.id)}
-                  onDblClick={() => openTextEditor(n)}
-                  onDblTap={() => openTextEditor(n)}
+                  listening={listening}
+                  onClick={() => listening && setSelected(n.id)}
+                  onTap={() => listening && setSelected(n.id)}
+                  onDblClick={() => listening && openTextEditor(n)}
+                  onDblTap={() => listening && openTextEditor(n)}
                   onDragEnd={(e) => {
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
@@ -912,8 +918,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
             if (n.type === "line") {
               const pts = pointsDocToScreen(n.points || []);
-              const extras = pickExtraKonvaProps(n, LINE_EXTRAS);
-
+              const listening = typeof n.listening === "boolean" ? n.listening : true;
               return (
                 <Line
                   key={n.id}
@@ -924,12 +929,12 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   lineCap={n.lineCap || "round"}
                   lineJoin={n.lineJoin || "round"}
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
-                  draggable={!isSpaceDown && !editingId && n?.draggable !== false}
+                  draggable={!isSpaceDown && !editingId && listening}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
-                  {...extras}
-                  onClick={() => setSelected(n.id)}
-                  onTap={() => setSelected(n.id)}
+                  listening={listening}
+                  onClick={() => listening && setSelected(n.id)}
+                  onTap={() => listening && setSelected(n.id)}
                   onDragEnd={(e) => {
                     const node = e.target;
                     const dxScreen = node.x();
@@ -955,7 +960,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             return null;
           })}
 
-          {/* transformer (Canva-ish) */}
           <Transformer
             ref={trRef}
             rotateEnabled
@@ -966,7 +970,16 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             anchorFill="rgba(6,10,18,0.95)"
             anchorSize={10}
             anchorCornerRadius={6}
-            enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"]}
+            enabledAnchors={[
+              "top-left",
+              "top-right",
+              "bottom-left",
+              "bottom-right",
+              "middle-left",
+              "middle-right",
+              "top-center",
+              "bottom-center",
+            ]}
             boundBoxFunc={(oldBox, newBox) => {
               if (newBox.width < 20 || newBox.height < 20) return oldBox;
               return newBox;

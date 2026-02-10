@@ -34,33 +34,58 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-/**
- * ✅ FIX PRO: resolver rutas de assets para que SIEMPRE sean absolutas
- */
-function resolveAssetSrc(src) {
+/** Normaliza rutas de assets dentro de templates (clave para Konva) */
+function normalizeAssetSrc(src) {
   if (!src || typeof src !== "string") return src;
-  const s = src.trim();
-  if (!s) return s;
-  if (s.startsWith("data:") || s.startsWith("http://") || s.startsWith("https://")) return s;
-  if (s.startsWith("/")) return s;
+
+  if (
+    src.startsWith("data:") ||
+    src.startsWith("blob:") ||
+    src.startsWith("http://") ||
+    src.startsWith("https://")
+  ) {
+    return src;
+  }
+
+  if (src.startsWith("/")) return src;
+
+  let s = src.replace(/^\.\//, "");
+
   if (s.startsWith("templates/")) return `/${s}`;
   if (s.startsWith("assets/")) return `/templates/${s}`;
-  return `/templates/${s.replace(/^\.?\//, "")}`;
+
+  // si ya viene "templates/assets/..." sin slash
+  if (s.startsWith("templates/assets/")) return `/${s}`;
+
+  // fallback: todo lo relativo se asume dentro de /templates/
+  return `/templates/${s}`;
 }
 
-function normalizeImageNode(n) {
-  if (!n || n.type !== "image") return n;
+/** normaliza nodos: ids + srcs */
+function normalizeNodes(nodes) {
+  if (!Array.isArray(nodes)) return [];
+  return nodes
+    .filter(Boolean)
+    .map((n) => {
+      const nn = { ...n };
 
-  const next = { ...n };
+      // id always
+      nn.id = uid();
 
-  // soporta varios nombres posibles
-  if (typeof next.src === "string") next.src = resolveAssetSrc(next.src);
-  if (typeof next.imageSrc === "string") next.imageSrc = resolveAssetSrc(next.imageSrc);
-  if (typeof next.url === "string") next.url = resolveAssetSrc(next.url);
-  if (typeof next.href === "string") next.href = resolveAssetSrc(next.href);
+      // si el template trae imagen en src/url/imageSrc/etc
+      const rawSrc = nn.src || nn.imageSrc || nn.url || nn.href || nn.dataURL || nn.dataUrl || null;
+      if (rawSrc) {
+        const fixed = normalizeAssetSrc(rawSrc);
+        if (nn.src) nn.src = fixed;
+        else if (nn.imageSrc) nn.imageSrc = fixed;
+        else if (nn.url) nn.url = fixed;
+        else nn.src = fixed; // standardize
+        // si no tenía type, lo volvemos image (defensivo)
+        if (!nn.type) nn.type = "image";
+      }
 
-  // dataURL no se toca
-  return next;
+      return nn;
+    });
 }
 
 /** normalizeDoc = seguro anti-bugs */
@@ -136,8 +161,7 @@ async function loadManifest(signal) {
 }
 
 async function loadTemplateDoc(itemPath) {
-  const p = resolveAssetSrc(itemPath); // ✅ FIX PRO (por si viene sin /)
-  const res = await fetch(p, { cache: "no-store" });
+  const res = await fetch(itemPath, { cache: "no-store" });
   if (!res.ok) throw new Error("No se pudo cargar template item");
   return res.json();
 }
@@ -147,7 +171,7 @@ async function loadTemplateDoc(itemPath) {
 function mulberry32(seed) {
   let t = seed >>> 0;
   return function () {
-    t += 0x6D2B79F5;
+    t += 0x6d2b79f5;
     let r = Math.imul(t ^ (t >>> 15), 1 | t);
     r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
@@ -164,10 +188,10 @@ function hashSeed(str) {
 }
 
 const PRO_PALETTES = [
-  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764", accent2: "#38BDF8" },
-  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8", accent2: "#A78BFA" },
-  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA", accent2: "#FFD764" },
-  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399", accent2: "#38BDF8" },
+  { bg: "#0B1220", fg: "#F8FAFF", accent: "#FFD764", accent2: "#38BDF8" }, // Aurea gold + sky
+  { bg: "#070A12", fg: "#EAF2FF", accent: "#38BDF8", accent2: "#A78BFA" }, // Sky + violet
+  { bg: "#0B1022", fg: "#F2F7FF", accent: "#A78BFA", accent2: "#FFD764" }, // Violet + gold
+  { bg: "#061018", fg: "#EFFFFB", accent: "#34D399", accent2: "#38BDF8" }, // Emerald + sky
 ];
 
 const PRO_FONTS = [
@@ -204,6 +228,7 @@ function addDecorPRO(doc, seedStr) {
 
   const archetypes = ["hud_frame", "soft_card", "diagonal", "badge_top"];
   const arch = archetypes[Math.floor(rnd() * archetypes.length)];
+
   const jitter = (v, amt) => v + (rnd() * 2 - 1) * amt;
 
   const { headline, sub, cta } = pickTextNodes(doc);
@@ -215,7 +240,8 @@ function addDecorPRO(doc, seedStr) {
       const isCTA = cta && n.id === cta.id;
 
       const baseSize = n.fontSize || 28;
-      const scale = isHeadline ? (0.92 + rnd() * 0.25) : isSub ? (0.9 + rnd() * 0.18) : 0.9 + rnd() * 0.16;
+      const scale =
+        isHeadline ? 0.92 + rnd() * 0.25 : isSub ? 0.9 + rnd() * 0.18 : 0.9 + rnd() * 0.16;
 
       const fill = isHeadline && rnd() > 0.55 ? pal.accent : isCTA && rnd() > 0.6 ? pal.fg : pal.fg;
 
@@ -244,25 +270,13 @@ function addDecorPRO(doc, seedStr) {
       };
     }
 
-    // ✅ asegura que imágenes también queden normalizadas
-    return normalizeImageNode({ ...n, id: uid() });
+    // IMPORTANTE: si es imagen, NO tocamos src, solo id
+    if (n.type === "image") {
+      return { ...n, id: uid() };
+    }
+
+    return { ...n, id: uid() };
   });
-
-  const bgGradient = {
-    id: uid(),
-    type: "rect",
-    x: 0,
-    y: 0,
-    width: W,
-    height: H,
-    fill: pal.bg,
-    draggable: false,
-    listening: false,
-
-    fillLinearGradientStartPoint: { x: 0, y: 0 },
-    fillLinearGradientEndPoint: { x: W, y: H },
-    fillLinearGradientColorStops: [0, pal.bg, 0.55, rgba(pal.accent2, 0.1), 1, rgba(pal.accent, 0.08)],
-  };
 
   const deco = [];
 
@@ -334,30 +348,32 @@ function addDecorPRO(doc, seedStr) {
   }
 
   if (arch === "badge_top" || rnd() > 0.5) {
-    deco.push({
-      id: uid(),
-      type: "rect",
-      x: 70,
-      y: 66,
-      width: Math.round(180 + rnd() * 120),
-      height: 48,
-      fill: rgba(pal.accent, 0.18),
-      cornerRadius: 16,
-      draggable: false,
-      listening: false,
-    });
-    deco.push({
-      id: uid(),
-      type: "text",
-      x: 88,
-      y: 79,
-      text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
-      fontSize: 18,
-      fontFamily: font,
-      fill: rgba(pal.fg, 0.92),
-      draggable: false,
-      listening: false,
-    });
+    deco.push(
+      {
+        id: uid(),
+        type: "rect",
+        x: 70,
+        y: 66,
+        width: Math.round(180 + rnd() * 120),
+        height: 48,
+        fill: rgba(pal.accent, 0.18),
+        cornerRadius: 16,
+        draggable: false,
+        listening: false,
+      },
+      {
+        id: uid(),
+        type: "text",
+        x: 88,
+        y: 79,
+        text: rnd() > 0.5 ? "OFERTA" : "NUEVO",
+        fontSize: 18,
+        fontFamily: font,
+        fill: rgba(pal.fg, 0.92),
+        draggable: false,
+        listening: false,
+      }
+    );
   }
 
   const dots = Math.round(14 + rnd() * 26);
@@ -370,7 +386,7 @@ function addDecorPRO(doc, seedStr) {
       y: Math.round(rnd() * (H - s)),
       width: s,
       height: s,
-      fill: rgba(rnd() > 0.7 ? pal.accent2 : pal.accent, 0.1 + rnd() * 0.18),
+      fill: rgba(rnd() > 0.7 ? pal.accent2 : pal.accent, 0.10 + rnd() * 0.18),
       cornerRadius: 999,
       draggable: false,
       listening: false,
@@ -400,12 +416,25 @@ function addDecorPRO(doc, seedStr) {
     return n;
   });
 
-  const finalNodes = [bgGradient, ...deco, ...nodes2];
+  // fondo PRO (sólido)
+  const bgRect = {
+    id: uid(),
+    type: "rect",
+    x: 0,
+    y: 0,
+    width: W,
+    height: H,
+    fill: pal.bg,
+    draggable: false,
+    listening: false,
+  };
+
+  const finalNodes = [bgRect, ...deco, ...nodes2];
 
   return {
     ...doc,
     meta: { ...doc.meta, bg: pal.bg },
-    nodes: finalNodes.map(normalizeImageNode), // ✅ FIX PRO final
+    nodes: finalNodes,
     selectedId: null,
   };
 }
@@ -416,7 +445,13 @@ function applyProVariation(baseDoc, seedStr) {
 
 /* ----------------------------- Component ----------------------------- */
 
-export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS, onNewFromTemplate, compact = false }) {
+export default function CanvasEditor({
+  doc,
+  onChange,
+  formats = DEFAULT_FORMATS,
+  onNewFromTemplate,
+  compact = false,
+}) {
   const externalDoc = doc || null;
 
   const [marketTemplates, setMarketTemplates] = useState([]);
@@ -426,16 +461,7 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
   useEffect(() => {
     const controller = new AbortController();
     loadManifest(controller.signal)
-      .then((m) => {
-        const items = Array.isArray(m.items) ? m.items : [];
-        // ✅ normaliza preview y itemPath por si vienen relativos
-        const fixed = items.map((t) => ({
-          ...t,
-          preview: resolveAssetSrc(t.preview || ""),
-          itemPath: resolveAssetSrc(t.itemPath || ""),
-        }));
-        setMarketTemplates(fixed);
-      })
+      .then((m) => setMarketTemplates(Array.isArray(m.items) ? m.items : []))
       .catch(() => setMarketTemplates([]));
     return () => controller.abort();
   }, []);
@@ -636,10 +662,6 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
       const base = await loadTemplateDoc(tpl.itemPath);
       const fmt = (formats || []).find((f) => f.id === tpl.formatId) || null;
 
-      const baseNodes = Array.isArray(base.nodes)
-        ? base.nodes.map((n) => normalizeImageNode({ ...n, id: uid() }))
-        : [];
-
       const baseDoc = normalizeDoc({
         meta: {
           w: fmt?.w ?? base?.meta?.w ?? 1080,
@@ -650,7 +672,8 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
           panY: 0,
           presetKey: `${tpl.id}::v${i}`,
         },
-        nodes: baseNodes,
+        // ✅ AQUI VA EL FIX: normalizamos ids + rutas de imagen
+        nodes: normalizeNodes(base?.nodes || []),
         selectedId: null,
       });
 
@@ -669,7 +692,6 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
     <div className={`w-full ${compact ? "h-[70vh]" : "h-[78vh]"} relative`}>
       <AureaFXStyles />
 
-      {/* ======== TOP HUD (mini) ======== */}
       <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2">
           <GlowButton onClick={undo} disabled={!undoRef.current.length} title="Undo (Ctrl/Cmd+Z)">
@@ -684,7 +706,11 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
             ZEN
           </GlowButton>
 
-          <GlowButton onClick={() => setOrbitMotion((v) => !v)} title="Orbit motion (Ctrl/Cmd+B)" variant={orbitMotion ? "sky" : "soft"}>
+          <GlowButton
+            onClick={() => setOrbitMotion((v) => !v)}
+            title="Orbit motion (Ctrl/Cmd+B)"
+            variant={orbitMotion ? "sky" : "soft"}
+          >
             Orbit
           </GlowButton>
 
@@ -704,9 +730,7 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
         ) : null}
       </div>
 
-      {/* ======== MAIN STAGE WRAP ======== */}
       <div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
-        {/* ======== CANVA-DOCK (izquierda) ======== */}
         {!zen && (
           <div className="absolute left-3 top-16 bottom-3 z-20 w-[78px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
             <DockBtn label="Diseño" active={activeTool === "design"} onClick={() => { setActiveTool("design"); setLeftOpen(true); }} icon="▦" orbitMotion={orbitMotion} />
@@ -718,7 +742,6 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
           </div>
         )}
 
-        {/* ======== LEFT DRAWER ======== */}
         {!zen && leftOpen && (
           <div className="absolute left-[84px] top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
@@ -753,7 +776,6 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
                 </div>
               ) : null}
 
-              {/* DESIGN: templates */}
               {activeTool === "design" && (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -777,7 +799,11 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
 
                   <div className="space-y-2">
                     {(formats || []).map((f) => (
-                      <button key={f.id} className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3" onClick={() => createFromFormat(f)}>
+                      <button
+                        key={f.id}
+                        className="w-full text-left rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition p-3"
+                        onClick={() => createFromFormat(f)}
+                      >
                         <div className="text-white font-medium">{f.title}</div>
                         <div className="text-white/60 text-xs">{f.subtitle}</div>
                       </button>
@@ -790,7 +816,9 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
                   </div>
 
                   {filteredMarket.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">No hay plantillas que coincidan con tu búsqueda.</div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white/60 text-sm">
+                      No hay plantillas que coincidan con tu búsqueda.
+                    </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {filteredMarket.map((t) => (
@@ -810,7 +838,7 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
                         >
                           <div className="relative w-full aspect-[4/3] bg-black/30 overflow-hidden">
                             <img
-                              src={resolveAssetSrc(t.preview || "/templates/previews/demo.jpg")}
+                              src={t.preview || "/templates/previews/demo.jpg"}
                               alt={t.title}
                               className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-300 group-hover:scale-[1.04]"
                               loading="lazy"
@@ -858,14 +886,15 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
                     <div className="text-white font-semibold text-sm">Mis diseños</div>
                     <div className="text-white/50 text-xs">(Luego conectamos historial por proyecto)</div>
                     <div className="mt-3 text-white/40 text-[11px]">
-                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo • <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
-                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen • <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
+                      Atajos: <span className="text-white/60">Ctrl/Cmd+Z</span> Undo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+Y</span> Redo •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+\</span> Zen •{" "}
+                      <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ELEMENTS */}
               {activeTool === "elements" && (
                 <div className="space-y-3">
                   <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
@@ -891,7 +920,6 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
                 </div>
               )}
 
-              {/* TEXT */}
               {activeTool === "text" && (
                 <div className="space-y-3">
                   <button className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm" onClick={addText} disabled={!hasDoc}>
@@ -939,7 +967,6 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
           </div>
         )}
 
-        {/* ======== RIGHT DRAWER (Inspector) ======== */}
         {!zen && rightOpen && (
           <div className="absolute right-3 top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
@@ -949,11 +976,12 @@ export default function CanvasEditor({ doc, onChange, formats = DEFAULT_FORMATS,
               </button>
             </div>
 
-            <div className="p-3 h-full overflow-auto">{!localDoc ? <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div> : <InspectorMini doc={localDoc} onChange={commit} />}</div>
+            <div className="p-3 h-full overflow-auto">
+              {!localDoc ? <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div> : <InspectorMini doc={localDoc} onChange={commit} />}
+            </div>
           </div>
         )}
 
-        {/* ======== CANVAS AREA ======== */}
         <div className="absolute inset-0">
           {!hasDoc ? (
             <div className="h-full flex items-center justify-center">
@@ -1010,10 +1038,7 @@ function InspectorMini({ doc, onChange }) {
 
   function patchSelected(patch) {
     if (!selected) return;
-    const next = {
-      ...doc,
-      nodes: doc.nodes.map((n) => (n.id === selected.id ? { ...n, ...patch } : n)),
-    };
+    const next = { ...doc, nodes: doc.nodes.map((n) => (n.id === selected.id ? { ...n, ...patch } : n)) };
     onChange(next);
   }
 
@@ -1080,30 +1105,17 @@ function InspectorMini({ doc, onChange }) {
             {selected.type === "text" && (
               <>
                 <label className="block text-white/60 text-xs mt-2">Texto</label>
-                <input
-                  className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                  value={selected.text || ""}
-                  onChange={(e) => patchSelected({ text: e.target.value })}
-                />
+                <input className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.text || ""} onChange={(e) => patchSelected({ text: e.target.value })} />
 
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <div>
                     <label className="block text-white/60 text-xs">Tamaño</label>
-                    <input
-                      type="number"
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.fontSize || 32}
-                      onChange={(e) => patchSelected({ fontSize: Number(e.target.value) || 32 })}
-                    />
+                    <input type="number" className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.fontSize || 32} onChange={(e) => patchSelected({ fontSize: Number(e.target.value) || 32 })} />
                   </div>
 
                   <div>
                     <label className="block text-white/60 text-xs">Color</label>
-                    <input
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.fill || "#E9EEF9"}
-                      onChange={(e) => patchSelected({ fill: e.target.value })}
-                    />
+                    <input className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.fill || "#E9EEF9"} onChange={(e) => patchSelected({ fill: e.target.value })} />
                   </div>
                 </div>
               </>
@@ -1112,31 +1124,17 @@ function InspectorMini({ doc, onChange }) {
             {selected.type === "rect" && (
               <>
                 <label className="block text-white/60 text-xs mt-2">Color</label>
-                <input
-                  className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                  value={selected.fill || "#2B3A67"}
-                  onChange={(e) => patchSelected({ fill: e.target.value })}
-                />
+                <input className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.fill || "#2B3A67"} onChange={(e) => patchSelected({ fill: e.target.value })} />
 
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <div>
                     <label className="block text-white/60 text-xs">Radius</label>
-                    <input
-                      type="number"
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.cornerRadius || 0}
-                      onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })}
-                    />
+                    <input type="number" className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.cornerRadius || 0} onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })} />
                   </div>
 
                   <div>
                     <label className="block text-white/60 text-xs">Rotación</label>
-                    <input
-                      type="number"
-                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
-                      value={selected.rotation || 0}
-                      onChange={(e) => patchSelected({ rotation: Number(e.target.value) || 0 })}
-                    />
+                    <input type="number" className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.rotation || 0} onChange={(e) => patchSelected({ rotation: Number(e.target.value) || 0 })} />
                   </div>
                 </div>
               </>
@@ -1185,7 +1183,7 @@ function GlowButton({ children, className = "", variant = "soft", disabled = fal
 }
 
 /* ----------------------------- Premium FX: global CSS ----------------------------- */
-/** Pegado dentro del mismo archivo para no tocar globals.css */
+
 function AureaFXStyles() {
   return (
     <style jsx global>{`
