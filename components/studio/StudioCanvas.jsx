@@ -33,7 +33,6 @@ function normalizeAssetSrc(src) {
   if (src.startsWith("data:") || src.startsWith("blob:") || src.startsWith("http://") || src.startsWith("https://")) {
     return src;
   }
-
   if (src.startsWith("/")) return src;
 
   let s = src.replace(/^\.\//, "");
@@ -124,6 +123,46 @@ const presetByWH = (w, h) => {
   return hit?.key || "ig_post";
 };
 
+/* ----------------------------- Layer helpers (no hooks here) ----------------------------- */
+
+function moveLayer(nodes, selectedId, dir) {
+  // dir: -1 sendBackward, +1 bringForward
+  const idx = nodes.findIndex((n) => n.id === selectedId);
+  if (idx < 0) return nodes;
+
+  if (nodes[idx]?.isBackground) return nodes;
+
+  const swapWith = idx + dir;
+  if (swapWith < 0 || swapWith >= nodes.length) return nodes;
+
+  if (nodes[swapWith]?.isBackground) return nodes;
+
+  const copy = nodes.slice();
+  const tmp = copy[idx];
+  copy[idx] = copy[swapWith];
+  copy[swapWith] = tmp;
+  return copy;
+}
+
+function moveToEdge(nodes, selectedId, edge) {
+  // edge: "back" | "front"
+  const idx = nodes.findIndex((n) => n.id === selectedId);
+  if (idx < 0) return nodes;
+  const item = nodes[idx];
+  if (item?.isBackground) return nodes;
+
+  const bgCount = nodes.filter((n) => n?.isBackground).length;
+  const rest = nodes.filter((n) => n.id !== selectedId);
+
+  if (edge === "back") {
+    const head = rest.slice(0, bgCount);
+    const tail = rest.slice(bgCount);
+    return [...head, item, ...tail];
+  }
+
+  return [...rest, item];
+}
+
 /* ----------------------------- Background Node (PRO) ----------------------------- */
 
 const BackgroundImageNode = React.memo(function BackgroundImageNode({ n, frame, canvasW, canvasH }) {
@@ -189,7 +228,7 @@ const ImageNode = React.memo(function ImageNode({
   const crop = n.crop && typeof n.crop === "object" ? n.crop : null;
 
   const locked = !!n.locked;
-  const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+  const listening = locked ? false : typeof n.listening === "boolean" ? n.listening : true;
   const draggable = !locked && !isSpaceDown && !editingId && listening;
 
   return (
@@ -242,6 +281,9 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  // floating toolbar box
+  const [toolbarBox, setToolbarBox] = useState(null); // {x,y,w,h}
 
   // Text editing overlay
   const [editingId, setEditingId] = useState(null);
@@ -322,8 +364,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     if (!selectedId) return;
     const n = nodes.find((x) => x.id === selectedId);
     if (!n) return;
-    if (n.isBackground) return; // no borrar bg aquí
-    if (n.locked) return; // no borrar locked
+    if (n.isBackground) return;
+    if (n.locked) return;
     const next = nodes.filter((x) => x.id !== selectedId);
     commit({ nodes: next, selectedId: null });
   }, [commit, nodes, selectedId]);
@@ -419,29 +461,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     return { x, y, w, h, scale, baseFit };
   }, [containerSize.w, containerSize.h, metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
-  /* ----------------------------- Transformer attach ----------------------------- */
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    const tr = trRef.current;
-    if (!stage || !tr) return;
-
-    // No seleccionar bg y no transformar locked
-    const effectiveSelected =
-      selectedId && bgNode && selectedId === bgNode.id ? null : selectedLocked ? null : selectedId;
-
-    const selectedKonva = effectiveSelected ? stage.findOne((node) => node.id() === effectiveSelected) : null;
-
-    if (selectedKonva) {
-      tr.nodes([selectedKonva]);
-      tr.getLayer()?.batchDraw();
-    } else {
-      tr.nodes([]);
-      tr.getLayer()?.batchDraw();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, selectedLocked, fgNodes.length, bgNode?.id]);
-
   /* ----------------------------- Pointer helpers ----------------------------- */
 
   const screenToDoc = useCallback(
@@ -474,6 +493,57 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     },
     [docToScreen]
   );
+
+  /* ----------------------------- Transformer attach (FIX + lock + bg) ----------------------------- */
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const tr = trRef.current;
+    if (!stage || !tr) return;
+
+    const model = selectedId ? nodes.find((x) => x.id === selectedId) : null;
+
+    if (!selectedId || !model || model.isBackground || model.locked) {
+      tr.nodes([]);
+      tr.getLayer()?.batchDraw();
+      return;
+    }
+
+    const selectedKonva = stage.findOne((node) => node.id() === selectedId) || null;
+
+    if (selectedKonva) {
+      tr.nodes([selectedKonva]);
+      tr.getLayer()?.batchDraw();
+    } else {
+      tr.nodes([]);
+      tr.getLayer()?.batchDraw();
+    }
+  }, [selectedId, nodes]);
+
+  /* ----------------------------- Floating toolbar box (selected bounds) ----------------------------- */
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !selectedId) {
+      setToolbarBox(null);
+      return;
+    }
+
+    const model = nodes.find((x) => x.id === selectedId);
+    if (!model || model.isBackground) {
+      setToolbarBox(null);
+      return;
+    }
+
+    const node = stage.findOne((n) => n.id() === selectedId);
+    if (!node) {
+      setToolbarBox(null);
+      return;
+    }
+
+    const rect = node.getClientRect({ skipStroke: true });
+    setToolbarBox({ x: rect.x, y: rect.y, w: rect.width, h: rect.height });
+  }, [selectedId, nodes, frame.x, frame.y, frame.scale, metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
   /* ----------------------------- Stage interactions ----------------------------- */
 
@@ -559,6 +629,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   const onTransformEnd = useCallback(
     (e, nodeModel) => {
+      if (!nodeModel || nodeModel.locked || nodeModel.isBackground) return;
+
       const node = e.target;
 
       const scaleX = node.scaleX();
@@ -607,6 +679,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   const openTextEditor = useCallback(
     (textNodeModel) => {
+      if (!textNodeModel || textNodeModel.locked) return;
+
       const stage = stageRef.current;
       if (!stage) return;
 
@@ -665,60 +739,55 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
-  /* ----------------------------- Layer ops (Send front/back + lock) ----------------------------- */
+  /* ----------------------------- Layer ops + Lock + Rotate (for toolbar) ----------------------------- */
 
-  const reorderSelected = useCallback(
-    (mode) => {
-      if (!selectedId) return;
-      const n = nodes.find((x) => x.id === selectedId);
-      if (!n) return;
-      if (n.isBackground) return;
+  const bringForward = useCallback(() => {
+    if (!selectedId) return;
+    if (selectedLocked) return;
+    commit({ nodes: moveLayer(nodes, selectedId, +1) });
+  }, [commit, nodes, selectedId, selectedLocked]);
 
-      const bg = nodes.find((x) => x.isBackground);
-      const fg = nodes.filter((x) => !x.isBackground);
+  const sendBackward = useCallback(() => {
+    if (!selectedId) return;
+    if (selectedLocked) return;
+    commit({ nodes: moveLayer(nodes, selectedId, -1) });
+  }, [commit, nodes, selectedId, selectedLocked]);
 
-      const idx = fg.findIndex((x) => x.id === selectedId);
-      if (idx < 0) return;
+  const bringToFront = useCallback(() => {
+    if (!selectedId) return;
+    if (selectedLocked) return;
+    commit({ nodes: moveToEdge(nodes, selectedId, "front") });
+  }, [commit, nodes, selectedId, selectedLocked]);
 
-      const swap = (a, b) => {
-        const next = fg.slice();
-        const tmp = next[a];
-        next[a] = next[b];
-        next[b] = tmp;
-        return next;
-      };
-
-      let nextFg = fg;
-
-      if (mode === "front") {
-        nextFg = fg.filter((x) => x.id !== selectedId).concat(fg[idx]);
-      } else if (mode === "back") {
-        nextFg = [fg[idx]].concat(fg.filter((x) => x.id !== selectedId));
-      } else if (mode === "forward") {
-        if (idx < fg.length - 1) nextFg = swap(idx, idx + 1);
-      } else if (mode === "backward") {
-        if (idx > 0) nextFg = swap(idx, idx - 1);
-      }
-
-      const next = bg ? [bg, ...nextFg] : nextFg;
-      commit({ nodes: next });
-    },
-    [commit, nodes, selectedId]
-  );
+  const sendToBack = useCallback(() => {
+    if (!selectedId) return;
+    if (selectedLocked) return;
+    commit({ nodes: moveToEdge(nodes, selectedId, "back") });
+  }, [commit, nodes, selectedId, selectedLocked]);
 
   const toggleLockSelected = useCallback(() => {
     if (!selectedId) return;
     const n = nodes.find((x) => x.id === selectedId);
     if (!n) return;
     if (n.isBackground) return;
-    updateNode(selectedId, { locked: !n.locked });
+    updateNode(selectedId, { locked: !n.locked, listening: n.locked ? true : false });
   }, [nodes, selectedId, updateNode]);
+
+  const rotateSelected = useCallback(
+    (deg) => {
+      if (!selectedId) return;
+      const n = nodes.find((x) => x.id === selectedId);
+      if (!n || n.isBackground || n.locked) return;
+      const rot = safeNum(n.rotation, 0);
+      updateNode(selectedId, { rotation: rot + deg });
+    },
+    [nodes, selectedId, updateNode]
+  );
 
   /* ----------------------------- Drag & Drop images ----------------------------- */
 
   const addImageAt = useCallback(
     async ({ dataUrl, xDoc, yDoc }) => {
-      // medir tamaño real (para inicializar nice)
       const img = await new Promise((resolve) => {
         const im = new window.Image();
         im.onload = () => resolve(im);
@@ -776,17 +845,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       const imgFiles = files.filter((f) => /^image\//.test(f.type));
       if (!imgFiles.length) return;
 
-      // coord screen dentro del container
       const rect = el.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
 
-      // convertir a doc coords
       const p = screenToDoc(sx, sy);
       const xDoc = clamp(p.x, 0, metaSafe.w);
       const yDoc = clamp(p.y, 0, metaSafe.h);
 
-      // carga 1 por 1 (primero el primero)
       for (const f of imgFiles) {
         const dataUrl = await new Promise((resolve) => {
           const fr = new FileReader();
@@ -842,7 +908,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     a.remove();
   };
 
-  /* ----------------------------- Keyboard shortcuts ----------------------------- */
+  /* ----------------------------- Keyboard shortcuts (optional keep) ----------------------------- */
 
   useEffect(() => {
     const onKeyDown = (ev) => {
@@ -886,25 +952,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         fitSmart();
       }
 
-      // Layers:
-      // ] forward | [ backward | Shift+] front | Shift+[ back
-      if (ev.key === "]") {
-        ev.preventDefault();
-        reorderSelected(ev.shiftKey ? "front" : "forward");
-      }
-      if (ev.key === "[") {
-        ev.preventDefault();
-        reorderSelected(ev.shiftKey ? "back" : "backward");
-      }
-
-      // Lock toggle: L
-      if (ev.key === "l" || ev.key === "L") {
-        if (selectedId) {
-          ev.preventDefault();
-          toggleLockSelected();
-        }
-      }
-
       const step = ev.shiftKey ? 10 : 1;
       if (ev.key === "ArrowLeft") {
         ev.preventDefault();
@@ -934,18 +981,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [
-    editingId,
-    closeTextEditor,
-    deleteSelected,
-    duplicateSelected,
-    nudgeSelected,
-    selectedId,
-    setSelected,
-    fitSmart,
-    reorderSelected,
-    toggleLockSelected,
-  ]);
+  }, [editingId, closeTextEditor, deleteSelected, duplicateSelected, nudgeSelected, selectedId, setSelected, fitSmart]);
 
   const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
   const presetValue = metaSafe.presetKey || presetByWH(metaSafe.w, metaSafe.h);
@@ -954,26 +990,18 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   return (
     <div ref={containerRef} className="w-full h-full relative select-none">
+      {/* Top HUD */}
       {!compact && (
         <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-auto">
           <div className="flex gap-2 items-center">
             <div className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 shadow-[0_14px_40px_rgba(0,0,0,.35)] backdrop-blur-md flex items-center gap-2">
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={zoomIn}
-              >
+              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={zoomIn}>
                 Zoom +
               </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={zoomOut}
-              >
+              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={zoomOut}>
                 Zoom -
               </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={fitSmart}
-              >
+              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={fitSmart}>
                 Fit
               </button>
 
@@ -991,51 +1019,13 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                 ))}
               </select>
 
-              <button
-                className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs"
-                onClick={exportPNG}
-              >
+              <button className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs" onClick={exportPNG}>
                 Export PNG
-              </button>
-
-              <div className="w-px h-7 bg-white/10 mx-1" />
-
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={() => reorderSelected("back")}
-                disabled={!selectedId || selectedLocked}
-                title="Send to Back (Shift+[)"
-              >
-                Back
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
-                onClick={() => reorderSelected("front")}
-                disabled={!selectedId || selectedLocked}
-                title="Send to Front (Shift+])"
-              >
-                Front
               </button>
 
               <button
                 className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md ${
-                  selectedId && selectedLocked
-                    ? "bg-red-500/15 border-red-400/25 text-red-100 hover:bg-red-500/25"
-                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
-                }`}
-                onClick={toggleLockSelected}
-                disabled={!selectedId}
-                title="Lock/Unlock (L)"
-              >
-                {selectedLocked ? "Locked" : "Lock"}
-              </button>
-
-              <button
-                className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md
-                ${
-                  showProps
-                    ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25"
-                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
+                  showProps ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25" : "bg-white/5 border-white/10 text-white hover:bg-white/10"
                 }`}
                 onClick={() => setShowProps((v) => !v)}
               >
@@ -1050,6 +1040,54 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         </div>
       )}
 
+      {/* Floating toolbar (Canva-like) */}
+      {toolbarBox && selectedNodeModel && !selectedNodeModel.isBackground && (
+        <div
+          className="absolute z-40"
+          style={{
+            left: `${Math.round(toolbarBox.x + toolbarBox.w / 2)}px`,
+            top: `${Math.round(toolbarBox.y - 12)}px`,
+            transform: "translate(-50%, -100%)",
+            pointerEvents: "auto",
+          }}
+        >
+          <div className="flex items-center gap-2 px-2 py-2 rounded-2xl border border-white/10 bg-black/40 backdrop-blur-xl shadow-[0_18px_60px_rgba(0,0,0,.6)]">
+            <button
+              onClick={toggleLockSelected}
+              className={`px-3 py-2 rounded-xl border text-xs ${
+                selectedLocked ? "bg-amber-500/20 border-amber-400/30 text-amber-100" : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+              }`}
+              title="Bloquear / Desbloquear"
+            >
+              {selectedLocked ? "🔒 Locked" : "🔓 Lock"}
+            </button>
+
+            <button onClick={sendToBack} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Al fondo">
+              ⏮️
+            </button>
+            <button onClick={sendBackward} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Enviar atrás">
+              ⬇️
+            </button>
+            <button onClick={bringForward} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Traer al frente">
+              ⬆️
+            </button>
+            <button onClick={bringToFront} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Al frente">
+              ⏭️
+            </button>
+
+            <div className="w-px h-7 bg-white/10 mx-1" />
+
+            <button onClick={() => rotateSelected(-15)} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Rotar -15°">
+              ↺
+            </button>
+            <button onClick={() => rotateSelected(+15)} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Rotar +15°">
+              ↻
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Text overlay */}
       {editingId && editingBox && (
         <textarea
           ref={textareaRef}
@@ -1098,30 +1136,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           {/* background */}
           <Rect x={0} y={0} width={containerSize.w} height={containerSize.h} fill="#060A12" listening={false} />
 
-          {/* futuristic grid */}
+          {/* grid */}
           {Array.from({ length: Math.ceil(containerSize.w / 80) }).map((_, i) => {
             const x = i * 80;
-            return (
-              <Line
-                key={`gv_${i}`}
-                points={[x, 0, x, containerSize.h]}
-                stroke="rgba(255,255,255,0.04)"
-                strokeWidth={1}
-                listening={false}
-              />
-            );
+            return <Line key={`gv_${i}`} points={[x, 0, x, containerSize.h]} stroke="rgba(255,255,255,0.04)" strokeWidth={1} listening={false} />;
           })}
           {Array.from({ length: Math.ceil(containerSize.h / 80) }).map((_, i) => {
             const y = i * 80;
-            return (
-              <Line
-                key={`gh_${i}`}
-                points={[0, y, containerSize.w, y]}
-                stroke="rgba(255,255,255,0.04)"
-                strokeWidth={1}
-                listening={false}
-              />
-            );
+            return <Line key={`gh_${i}`} points={[0, y, containerSize.w, y]} stroke="rgba(255,255,255,0.04)" strokeWidth={1} listening={false} />;
           })}
 
           {/* canvas frame */}
@@ -1153,11 +1175,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   editingId={editingId}
                   setSelected={setSelected}
                   setShowProps={setShowProps}
-                  screenToDoc={(sx, sy) => {
-                    const dx = (sx - frame.x) / frame.scale;
-                    const dy = (sy - frame.y) / frame.scale;
-                    return { x: dx, y: dy };
-                  }}
+                  screenToDoc={screenToDoc}
                   updateNode={updateNode}
                   onTransformEnd={onTransformEnd}
                 />
@@ -1167,7 +1185,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             if (n.type === "rect") {
               const p = docToScreen(n.x || 0, n.y || 0);
               const locked = !!n.locked;
-              const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+              const listening = locked ? false : typeof n.listening === "boolean" ? n.listening : true;
               const draggable = !locked && !isSpaceDown && !editingId && listening;
 
               return (
@@ -1206,7 +1224,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             if (n.type === "text") {
               const p = docToScreen(n.x || 0, n.y || 0);
               const locked = !!n.locked;
-              const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+              const listening = locked ? false : typeof n.listening === "boolean" ? n.listening : true;
               const draggable = !locked && !isSpaceDown && !editingId && listening;
 
               return (
@@ -1246,7 +1264,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             if (n.type === "line") {
               const pts = pointsDocToScreen(n.points || []);
               const locked = !!n.locked;
-              const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+              const listening = locked ? false : typeof n.listening === "boolean" ? n.listening : true;
               const draggable = !locked && !isSpaceDown && !editingId && listening;
 
               return (
@@ -1329,16 +1347,10 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
             <div className="text-white/80 text-sm font-semibold">Capas</div>
             <div className="flex items-center gap-2">
-              <button
-                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                onClick={() => setPropsMin((v) => !v)}
-              >
+              <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => setPropsMin((v) => !v)}>
                 {propsMin ? "Expandir" : "Min"}
               </button>
-              <button
-                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                onClick={() => setShowProps(false)}
-              >
+              <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => setShowProps(false)}>
                 ✕
               </button>
             </div>
@@ -1346,87 +1358,35 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
           {!propsMin && (
             <div className="p-3 space-y-3">
-              <div className="text-white/60 text-xs">
-                Shortcuts: Space Pan • Shift+[ Back • Shift+] Front • [ / ] step • L lock • Del delete • Ctrl+D dup
-              </div>
+              <div className="text-white/60 text-xs">Tip: usa la barra flotante sobre el objeto para Lock / Capas / Rotar.</div>
 
               <div className="space-y-2 max-h-[260px] overflow-auto pr-1">
-                {/* fgNodes = de atrás a frente; en UI mostramos "arriba=front" */}
                 {[...fgNodes].map((n) => {
                   const isSel = n.id === selectedId;
                   const locked = !!n.locked;
                   const label =
-                    n.type === "image"
-                      ? "Imagen"
-                      : n.type === "text"
-                      ? "Texto"
-                      : n.type === "rect"
-                      ? "Forma"
-                      : n.type === "line"
-                      ? "Línea"
-                      : "Nodo";
+                    n.type === "image" ? "Imagen" : n.type === "text" ? "Texto" : n.type === "rect" ? "Forma" : n.type === "line" ? "Línea" : "Nodo";
 
                   return (
-                    <div
-                      key={n.id}
-                      className={`flex items-center justify-between gap-2 rounded-xl border px-2 py-2 ${
-                        isSel ? "border-sky-400/40 bg-sky-500/10" : "border-white/10 bg-white/5"
-                      }`}
-                    >
-                      <button
-                        className="flex-1 text-left text-white/80 text-xs truncate"
-                        onClick={() => setSelected(n.id)}
-                        title={n.id}
-                      >
+                    <div key={n.id} className={`flex items-center justify-between gap-2 rounded-xl border px-2 py-2 ${isSel ? "border-sky-400/40 bg-sky-500/10" : "border-white/10 bg-white/5"}`}>
+                      <button className="flex-1 text-left text-white/80 text-xs truncate" onClick={() => setSelected(n.id)} title={n.id}>
                         {label} {locked ? "🔒" : ""}
                       </button>
 
                       <div className="flex items-center gap-1">
-                        <button
-                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                          onClick={() => updateNode(n.id, { locked: !locked })}
-                          title="Lock/Unlock"
-                        >
+                        <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => updateNode(n.id, { locked: !locked, listening: locked ? true : false })} title="Lock/Unlock">
                           {locked ? "Unlock" : "Lock"}
                         </button>
-                        <button
-                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                          onClick={() => {
-                            setSelected(n.id);
-                            reorderSelected("backward");
-                          }}
-                          title="Step back ([)"
-                        >
+                        <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => commit({ nodes: moveLayer(nodes, n.id, -1) })} title="Step back">
                           ◀
                         </button>
-                        <button
-                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                          onClick={() => {
-                            setSelected(n.id);
-                            reorderSelected("forward");
-                          }}
-                          title="Step forward (])"
-                        >
+                        <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => commit({ nodes: moveLayer(nodes, n.id, +1) })} title="Step forward">
                           ▶
                         </button>
-                        <button
-                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                          onClick={() => {
-                            setSelected(n.id);
-                            reorderSelected("back");
-                          }}
-                          title="Send to back (Shift+[)"
-                        >
+                        <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => commit({ nodes: moveToEdge(nodes, n.id, "back") })} title="Send to back">
                           Back
                         </button>
-                        <button
-                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
-                          onClick={() => {
-                            setSelected(n.id);
-                            reorderSelected("front");
-                          }}
-                          title="Send to front (Shift+])"
-                        >
+                        <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]" onClick={() => commit({ nodes: moveToEdge(nodes, n.id, "front") })} title="Send to front">
                           Front
                         </button>
                       </div>
