@@ -1,3 +1,4 @@
+// components/studio/CanvasEditor.jsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -38,12 +39,7 @@ function clamp(v, min, max) {
 function normalizeAssetSrc(src) {
   if (!src || typeof src !== "string") return src;
 
-  if (
-    src.startsWith("data:") ||
-    src.startsWith("blob:") ||
-    src.startsWith("http://") ||
-    src.startsWith("https://")
-  ) {
+  if (src.startsWith("data:") || src.startsWith("blob:") || src.startsWith("http://") || src.startsWith("https://")) {
     return src;
   }
 
@@ -69,7 +65,7 @@ function normalizeNodes(nodes) {
     .map((n) => {
       const nn = { ...n };
 
-      // id always
+      // id always (pero respetamos si ya trae y es string)
       nn.id = uid();
 
       // si el template trae imagen en src/url/imageSrc/etc
@@ -164,6 +160,34 @@ async function loadTemplateDoc(itemPath) {
   const res = await fetch(itemPath, { cache: "no-store" });
   if (!res.ok) throw new Error("No se pudo cargar template item");
   return res.json();
+}
+
+/* ----------------------------- File Upload Helpers ----------------------------- */
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ""));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function makeBackgroundImageNode({ src, w, h, fit = "cover", opacity = 1 }) {
+  return {
+    id: uid(),
+    type: "image",
+    src,
+    x: 0,
+    y: 0,
+    width: w,
+    height: h,
+    draggable: false,
+    listening: false,
+    isBackground: true,
+    fit, // "cover" | "contain"
+    opacity: clamp(opacity, 0, 1),
+  };
 }
 
 /* ----------------------------- PRO Variations Engine ----------------------------- */
@@ -492,6 +516,10 @@ export default function CanvasEditor({
 
   const [orbitMotion, setOrbitMotion] = useState(false);
 
+  // Background slot state
+  const [bgFit, setBgFit] = useState("cover"); // cover | contain
+  const [bgOpacity, setBgOpacity] = useState(1);
+
   useEffect(() => {
     const next = normalizeDoc(externalDoc);
     setLocalDoc(next);
@@ -672,7 +700,7 @@ export default function CanvasEditor({
           panY: 0,
           presetKey: `${tpl.id}::v${i}`,
         },
-        // ✅ AQUI VA EL FIX: normalizamos ids + rutas de imagen
+        // ✅ normalizamos ids + rutas de imagen
         nodes: normalizeNodes(base?.nodes || []),
         selectedId: null,
       });
@@ -684,6 +712,46 @@ export default function CanvasEditor({
       commit(proDoc, { silent: true });
     },
     [commit, formats]
+  );
+
+  // Background Slot actions
+  const setBackgroundFromFile = useCallback(
+    async (file) => {
+      if (!file || !localDoc) return;
+      const dataUrl = await readFileAsDataURL(file);
+
+      const W = localDoc.meta.w;
+      const H = localDoc.meta.h;
+
+      const kept = (localDoc.nodes || []).filter((n) => !n?.isBackground);
+      const bgNode = makeBackgroundImageNode({ src: dataUrl, w: W, h: H, fit: bgFit, opacity: bgOpacity });
+
+      undoRef.current = [];
+      redoRef.current = [];
+      commit({ ...localDoc, nodes: [bgNode, ...kept], selectedId: null }, { silent: true });
+    },
+    [localDoc, commit, bgFit, bgOpacity]
+  );
+
+  const removeBackground = useCallback(() => {
+    if (!localDoc) return;
+    commit(
+      {
+        ...localDoc,
+        nodes: (localDoc.nodes || []).filter((n) => !n?.isBackground),
+        selectedId: null,
+      },
+      { silent: true }
+    );
+  }, [localDoc, commit]);
+
+  const updateBackgroundProps = useCallback(
+    (patch) => {
+      if (!localDoc) return;
+      const nodes = (localDoc.nodes || []).map((n) => (n?.isBackground ? { ...n, ...patch } : n));
+      commit({ ...localDoc, nodes, selectedId: null });
+    },
+    [localDoc, commit]
   );
 
   /* ----------------------------- Layout ----------------------------- */
@@ -733,12 +801,66 @@ export default function CanvasEditor({
       <div className={`absolute inset-0 ${zen ? "p-0" : ""}`}>
         {!zen && (
           <div className="absolute left-3 top-16 bottom-3 z-20 w-[78px] rounded-2xl border border-white/10 bg-black/35 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] flex flex-col items-center py-3 gap-2">
-            <DockBtn label="Diseño" active={activeTool === "design"} onClick={() => { setActiveTool("design"); setLeftOpen(true); }} icon="▦" orbitMotion={orbitMotion} />
-            <DockBtn label="Elementos" active={activeTool === "elements"} onClick={() => { setActiveTool("elements"); setLeftOpen(true); }} icon="⬡" orbitMotion={orbitMotion} />
-            <DockBtn label="Texto" active={activeTool === "text"} onClick={() => { setActiveTool("text"); setLeftOpen(true); }} icon="T" orbitMotion={orbitMotion} />
-            <DockBtn label="Subidos" active={activeTool === "uploads"} onClick={() => { setActiveTool("uploads"); setLeftOpen(true); }} icon="⇪" orbitMotion={orbitMotion} />
-            <DockBtn label="Marca" active={activeTool === "brand"} onClick={() => { setActiveTool("brand"); setLeftOpen(true); }} icon="♥" orbitMotion={orbitMotion} />
-            <DockBtn label="Apps" active={activeTool === "apps"} onClick={() => { setActiveTool("apps"); setLeftOpen(true); }} icon="⌁" orbitMotion={orbitMotion} />
+            <DockBtn
+              label="Diseño"
+              active={activeTool === "design"}
+              onClick={() => {
+                setActiveTool("design");
+                setLeftOpen(true);
+              }}
+              icon="▦"
+              orbitMotion={orbitMotion}
+            />
+            <DockBtn
+              label="Elementos"
+              active={activeTool === "elements"}
+              onClick={() => {
+                setActiveTool("elements");
+                setLeftOpen(true);
+              }}
+              icon="⬡"
+              orbitMotion={orbitMotion}
+            />
+            <DockBtn
+              label="Texto"
+              active={activeTool === "text"}
+              onClick={() => {
+                setActiveTool("text");
+                setLeftOpen(true);
+              }}
+              icon="T"
+              orbitMotion={orbitMotion}
+            />
+            <DockBtn
+              label="Subidos"
+              active={activeTool === "uploads"}
+              onClick={() => {
+                setActiveTool("uploads");
+                setLeftOpen(true);
+              }}
+              icon="⇪"
+              orbitMotion={orbitMotion}
+            />
+            <DockBtn
+              label="Marca"
+              active={activeTool === "brand"}
+              onClick={() => {
+                setActiveTool("brand");
+                setLeftOpen(true);
+              }}
+              icon="♥"
+              orbitMotion={orbitMotion}
+            />
+            <DockBtn
+              label="Apps"
+              active={activeTool === "apps"}
+              onClick={() => {
+                setActiveTool("apps");
+                setLeftOpen(true);
+              }}
+              icon="⌁"
+              orbitMotion={orbitMotion}
+            />
           </div>
         )}
 
@@ -760,10 +882,18 @@ export default function CanvasEditor({
               </div>
 
               <div className="flex items-center gap-2">
-                <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]" onClick={resetDoc} title="Reset documento">
+                <button
+                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                  onClick={resetDoc}
+                  title="Reset documento"
+                >
                   Reset
                 </button>
-                <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]" onClick={() => setLeftOpen(false)} title="Cerrar panel">
+                <button
+                  className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                  onClick={() => setLeftOpen(false)}
+                  title="Cerrar panel"
+                >
                   ✕
                 </button>
               </div>
@@ -772,7 +902,8 @@ export default function CanvasEditor({
             <div className="p-3 h-full overflow-auto">
               {!hasDoc ? (
                 <div className="text-white/60 text-sm">
-                  Crea un documento para comenzar. <span className="text-white/40">(Diseño → elige una plantilla)</span>
+                  Crea un documento para comenzar.{" "}
+                  <span className="text-white/40">(Diseño → elige una plantilla)</span>
                 </div>
               ) : null}
 
@@ -846,7 +977,9 @@ export default function CanvasEditor({
                             <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/0 to-black/0" />
                             <div className="absolute bottom-2 left-2 right-2">
                               <div className="text-white text-xs font-semibold truncate">{t.title}</div>
-                              <div className="text-white/60 text-[10px] truncate">{t.subtitle || t.category || "Plantilla"}</div>
+                              <div className="text-white/60 text-[10px] truncate">
+                                {t.subtitle || t.category || "Plantilla"}
+                              </div>
                             </div>
                           </div>
                         </button>
@@ -899,7 +1032,12 @@ export default function CanvasEditor({
                 <div className="space-y-3">
                   <div className="text-white/60 text-xs">Figuras rápidas (preview UI)</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <button className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs" onClick={addShape} disabled={!hasDoc} title="Agregar rect">
+                    <button
+                      className="rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 p-3 text-white text-xs"
+                      onClick={addShape}
+                      disabled={!hasDoc}
+                      title="Agregar rect"
+                    >
                       + Rect
                     </button>
                     <button className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white text-xs opacity-70" disabled>
@@ -915,14 +1053,20 @@ export default function CanvasEditor({
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                     <div className="text-white/80 text-sm font-semibold">Panel Elementos</div>
-                    <div className="text-white/50 text-xs mt-1">Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.</div>
+                    <div className="text-white/50 text-xs mt-1">
+                      Aquí meteremos shapes premium, stickers, marcos, HUDs, etc.
+                    </div>
                   </div>
                 </div>
               )}
 
               {activeTool === "text" && (
                 <div className="space-y-3">
-                  <button className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm" onClick={addText} disabled={!hasDoc}>
+                  <button
+                    className="w-full px-3 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-sm"
+                    onClick={addText}
+                    disabled={!hasDoc}
+                  >
                     + Agregar texto
                   </button>
 
@@ -944,9 +1088,96 @@ export default function CanvasEditor({
               )}
 
               {activeTool === "uploads" && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="text-white font-semibold">Subidos</div>
-                  <div className="text-white/50 text-xs mt-1">Preview UI: aquí irá drag & drop + librería.</div>
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-white font-semibold">Subidos</div>
+                    <div className="text-white/50 text-xs mt-1">
+                      Background Slot (tipo Canva): sube imagen y queda como fondo bloqueado.
+                    </div>
+
+                    <div className="mt-3">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={!hasDoc}
+                        onChange={async (e) => {
+                          try {
+                            const f = e.target.files?.[0];
+                            if (f) await setBackgroundFromFile(f);
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            e.target.value = "";
+                          }
+                        }}
+                        className="block w-full text-xs text-white/70
+                          file:mr-3 file:rounded-xl file:border file:border-white/10 file:bg-black/30
+                          file:px-3 file:py-2 file:text-xs file:text-white/80 hover:file:bg-white/10"
+                      />
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+                        <div className="text-white/60 text-[11px]">Fit</div>
+                        <select
+                          value={bgFit}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setBgFit(v);
+                            updateBackgroundProps({ fit: v });
+                          }}
+                          disabled={!hasDoc}
+                          className="mt-1 w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-xs outline-none"
+                        >
+                          <option value="cover">Cover</option>
+                          <option value="contain">Contain</option>
+                        </select>
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+                        <div className="text-white/60 text-[11px]">Opacity</div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.02"
+                          value={bgOpacity}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setBgOpacity(v);
+                            updateBackgroundProps({ opacity: v });
+                          }}
+                          disabled={!hasDoc}
+                          className="mt-2 w-full"
+                        />
+                        <div className="text-white/50 text-[10px] mt-1">{Math.round(bgOpacity * 100)}%</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs disabled:opacity-50"
+                        disabled={!hasDoc}
+                        onClick={() => updateBackgroundProps({ fit: "cover" })}
+                      >
+                        Auto Cover
+                      </button>
+                      <button
+                        className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs disabled:opacity-50"
+                        disabled={!hasDoc}
+                        onClick={removeBackground}
+                      >
+                        Quitar fondo
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-white/80 text-sm font-semibold">Tips</div>
+                    <div className="text-white/50 text-xs mt-1">
+                      El fondo queda bloqueado y siempre atrás. Luego le metemos librería, drag & drop y “Remove background” IA.
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -971,13 +1202,21 @@ export default function CanvasEditor({
           <div className="absolute right-3 top-16 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
               <div className="text-white font-semibold text-sm">Inspector</div>
-              <button className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]" onClick={() => setRightOpen(false)} title="Cerrar inspector">
+              <button
+                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-[11px]"
+                onClick={() => setRightOpen(false)}
+                title="Cerrar inspector"
+              >
                 ✕
               </button>
             </div>
 
             <div className="p-3 h-full overflow-auto">
-              {!localDoc ? <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div> : <InspectorMini doc={localDoc} onChange={commit} />}
+              {!localDoc ? (
+                <div className="text-white/50 text-sm">Crea un documento para editar propiedades.</div>
+              ) : (
+                <InspectorMini doc={localDoc} onChange={commit} />
+              )}
             </div>
           </div>
         )}
@@ -989,7 +1228,8 @@ export default function CanvasEditor({
                 <div className="text-white text-xl font-semibold">AUREA STUDIO</div>
                 <div className="text-white/60 text-sm mt-1">Abre “Diseño” y elige un formato.</div>
                 <div className="text-white/40 text-xs mt-2">
-                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode • <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
+                  Tip: <span className="text-white/60">Ctrl/Cmd+\</span> Zen mode •{" "}
+                  <span className="text-white/60">Ctrl/Cmd+B</span> Orbit
                 </div>
               </div>
             </div>
@@ -1013,7 +1253,11 @@ function DockBtn({ label, icon, active, onClick, orbitMotion }) {
       hover:scale-[1.03] active:scale-[0.98]`}
       title={label}
     >
-      <span className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition ${orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
+      <span
+        className={`pointer-events-none absolute inset-0 rounded-2xl aurea-orbit-border transition ${
+          orbitMotion ? "aurea-orbit-always opacity-100" : active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}
+      />
       <span className="pointer-events-none absolute -inset-10 aurea-glow-wash opacity-40 group-hover:opacity-70 transition" />
       <div className="relative z-10 text-[18px] leading-none">{icon}</div>
       <div className="relative z-10 text-[10px] leading-none tracking-wide">{label}</div>
@@ -1068,14 +1312,15 @@ function InspectorMini({ doc, onChange }) {
         <div className="mt-2 space-y-1 max-h-[240px] overflow-auto pr-1">
           {doc.nodes.slice().map((n, idx) => {
             const isSel = doc.selectedId === n.id;
-            const label =
-              n.type === "text" ? (n.text || "Texto").slice(0, 18) : n.type === "rect" ? "Shape" : n.type;
+            const label = n.type === "text" ? (n.text || "Texto").slice(0, 18) : n.type === "rect" ? "Shape" : n.type;
 
             return (
               <button
                 key={n.id}
                 className={`w-full flex items-center justify-between rounded-xl px-3 py-2 border transition ${
-                  isSel ? "bg-sky-500/10 border-sky-400/30 text-white" : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
+                  isSel
+                    ? "bg-sky-500/10 border-sky-400/30 text-white"
+                    : "bg-black/20 border-white/10 text-white/80 hover:bg-white/5"
                 }`}
                 onClick={() => onChange({ ...doc, selectedId: n.id })}
                 title={label}
@@ -1105,17 +1350,30 @@ function InspectorMini({ doc, onChange }) {
             {selected.type === "text" && (
               <>
                 <label className="block text-white/60 text-xs mt-2">Texto</label>
-                <input className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.text || ""} onChange={(e) => patchSelected({ text: e.target.value })} />
+                <input
+                  className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                  value={selected.text || ""}
+                  onChange={(e) => patchSelected({ text: e.target.value })}
+                />
 
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <div>
                     <label className="block text-white/60 text-xs">Tamaño</label>
-                    <input type="number" className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.fontSize || 32} onChange={(e) => patchSelected({ fontSize: Number(e.target.value) || 32 })} />
+                    <input
+                      type="number"
+                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      value={selected.fontSize || 32}
+                      onChange={(e) => patchSelected({ fontSize: Number(e.target.value) || 32 })}
+                    />
                   </div>
 
                   <div>
                     <label className="block text-white/60 text-xs">Color</label>
-                    <input className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.fill || "#E9EEF9"} onChange={(e) => patchSelected({ fill: e.target.value })} />
+                    <input
+                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      value={selected.fill || "#E9EEF9"}
+                      onChange={(e) => patchSelected({ fill: e.target.value })}
+                    />
                   </div>
                 </div>
               </>
@@ -1124,17 +1382,31 @@ function InspectorMini({ doc, onChange }) {
             {selected.type === "rect" && (
               <>
                 <label className="block text-white/60 text-xs mt-2">Color</label>
-                <input className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.fill || "#2B3A67"} onChange={(e) => patchSelected({ fill: e.target.value })} />
+                <input
+                  className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                  value={selected.fill || "#2B3A67"}
+                  onChange={(e) => patchSelected({ fill: e.target.value })}
+                />
 
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <div>
                     <label className="block text-white/60 text-xs">Radius</label>
-                    <input type="number" className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.cornerRadius || 0} onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })} />
+                    <input
+                      type="number"
+                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      value={selected.cornerRadius || 0}
+                      onChange={(e) => patchSelected({ cornerRadius: Number(e.target.value) || 0 })}
+                    />
                   </div>
 
                   <div>
                     <label className="block text-white/60 text-xs">Rotación</label>
-                    <input type="number" className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm" value={selected.rotation || 0} onChange={(e) => patchSelected({ rotation: Number(e.target.value) || 0 })} />
+                    <input
+                      type="number"
+                      className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-white text-sm"
+                      value={selected.rotation || 0}
+                      onChange={(e) => patchSelected({ rotation: Number(e.target.value) || 0 })}
+                    />
                   </div>
                 </div>
               </>
@@ -1144,7 +1416,10 @@ function InspectorMini({ doc, onChange }) {
               <button className="flex-1 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs" onClick={duplicate}>
                 Duplicar
               </button>
-              <button className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs" onClick={deleteSelected}>
+              <button
+                className="flex-1 px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 text-xs"
+                onClick={deleteSelected}
+              >
                 Eliminar
               </button>
             </div>

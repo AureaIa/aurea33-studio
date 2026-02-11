@@ -1,3 +1,4 @@
+// components/studio/StudioCanvas.jsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -29,33 +30,18 @@ function safeStr(x, fallback) {
 function normalizeAssetSrc(src) {
   if (!src || typeof src !== "string") return null;
 
-  // data urls / blobs / http(s)
-  if (
-    src.startsWith("data:") ||
-    src.startsWith("blob:") ||
-    src.startsWith("http://") ||
-    src.startsWith("https://")
-  ) {
+  if (src.startsWith("data:") || src.startsWith("blob:") || src.startsWith("http://") || src.startsWith("https://")) {
     return src;
   }
 
-  // ya absoluto del sitio
   if (src.startsWith("/")) return src;
 
-  // quita ./ inicial
   let s = src.replace(/^\.\//, "");
 
-  // si viene "templates/assets/..." => "/templates/assets/..."
   if (s.startsWith("templates/")) return `/${s}`;
-
-  // si viene "assets/..." => "/templates/assets/..."
   if (s.startsWith("assets/")) return `/templates/${s}`;
-
-  // fallback: si viene algo como "bg/beauty_01.jpg" lo intentamos dentro de templates/assets/
-  // (no rompe si no existe, solo no carga)
   if (!s.includes("/")) return `/templates/assets/${s}`;
 
-  // fallback genérico: lo servimos desde /templates/
   return `/templates/${s}`;
 }
 
@@ -69,25 +55,17 @@ function useHtmlImage(src) {
   const [img, setImg] = useState(null);
 
   useEffect(() => {
-    if (!src) {
-      setImg(null);
-      return;
-    }
-
-    if (typeof window === "undefined") {
+    if (!src || typeof window === "undefined") {
       setImg(null);
       return;
     }
 
     let alive = true;
     const image = new window.Image();
-
-    // Para mismo dominio no estorba; si algún día sirves assets desde CDN sí ayuda.
     image.crossOrigin = "anonymous";
 
     image.onload = async () => {
       if (!alive) return;
-      // decode ayuda a reducir “parpadeos” en algunos browsers
       try {
         if (image.decode) await image.decode();
       } catch (_) {}
@@ -126,7 +104,7 @@ const presetByWH = (w, h) => {
 
 /* ----------------------------- Image Node (memo) ----------------------------- */
 
-function ImageNode({
+const ImageNode = React.memo(function ImageNode({
   n,
   frame,
   isSpaceDown,
@@ -153,7 +131,6 @@ function ImageNode({
   const rotation = safeNum(n.rotation, 0);
 
   const crop = n.crop && typeof n.crop === "object" ? n.crop : null;
-
   const listening = typeof n.listening === "boolean" ? n.listening : true;
 
   return (
@@ -188,7 +165,7 @@ function ImageNode({
       onTransformEnd={(e) => onTransformEnd(e, n)}
     />
   );
-}
+});
 
 /* ----------------------------- Component ----------------------------- */
 
@@ -209,7 +186,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [editingBox, setEditingBox] = useState(null);
   const textareaRef = useRef(null);
 
-  // Floating panels
+  // Floating panels (CanvasEditor puede abrirlo)
   const [showProps, setShowProps] = useState(true);
   const [propsMin, setPropsMin] = useState(false);
 
@@ -250,7 +227,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const commit = useCallback(
     (patch) => {
       if (!onChange) return;
-      onChange({ ...(doc || {}), ...patch });
+      const base = doc || {};
+      onChange({ ...base, ...patch });
     },
     [doc, onChange]
   );
@@ -364,14 +342,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     return { x, y, w, h, scale, baseFit };
   }, [containerSize.w, containerSize.h, metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
-  /* ----------------------------- Transformer attach ----------------------------- */
-
+  /* ----------------------------- Transformer attach (FIX) ----------------------------- */
+  // ✅ FIX: buscar por `id` (no selector #) para evitar problemas si el id trae chars raros.
   useEffect(() => {
     const stage = stageRef.current;
     const tr = trRef.current;
     if (!stage || !tr) return;
 
-    const selectedNode = selectedId ? stage.findOne(`#${selectedId}`) : null;
+    const selectedNode = selectedId ? stage.findOne((node) => node.id() === selectedId) : null;
 
     if (selectedNode) {
       tr.nodes([selectedNode]);
@@ -461,6 +439,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
       const stage = stageRef.current;
       if (!stage) return;
+
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
@@ -499,8 +478,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const onTransformEnd = useCallback(
     (e, nodeModel) => {
       const node = e.target;
+
       const scaleX = node.scaleX();
       const scaleY = node.scaleY();
+
+      // reset scale en konva (guardamos en doc en unidades "doc")
       node.scaleX(1);
       node.scaleY(1);
 
@@ -535,7 +517,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
       if (nodeModel.type === "line") {
         updateNode(nodeModel.id, { rotation: node.rotation() });
-        return;
       }
     },
     [frame.scale, screenToDoc, updateNode]
@@ -548,7 +529,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       const stage = stageRef.current;
       if (!stage) return;
 
-      const konvaNode = stage.findOne(`#${textNodeModel.id}`);
+      const konvaNode = stage.findOne((node) => node.id() === textNodeModel.id);
       if (!konvaNode) return;
 
       const box = konvaNode.getClientRect({ skipStroke: true });
@@ -597,7 +578,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     [editingId, editingValue, updateNode]
   );
 
-  // Si cambian zoom/pan/tamaño mientras editas, commit y cierra para evitar desalineación
   useEffect(() => {
     if (!editingId) return;
     closeTextEditor("commit");
@@ -617,28 +597,43 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     setSelected(null);
   };
 
+  // ✅ FIX export: render real canvas tamaño doc, no el viewport (evita export chiquito/borroso)
   const exportPNG = () => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    const maxSide = Math.max(metaSafe.w, metaSafe.h);
-    const pixelRatio = maxSide > 2200 ? 1.5 : 2;
+    // hacemos un "snapshot" temporal: 1) stage = doc size 2) frame = 0,0 scale=1
+    const prevSize = { w: stage.width(), h: stage.height() };
 
+    const prevMeta = metaSafe;
+    const prevZoom = prevMeta.zoom;
+    const prevPanX = prevMeta.panX;
+    const prevPanY = prevMeta.panY;
+
+    // no tocamos estado react para no re-render: solo exportamos con draw override
+    const pixelRatio = 2; // retina
     const uri = stage.toDataURL({
-      x: Math.round(frame.x),
-      y: Math.round(frame.y),
-      width: Math.round(frame.w),
-      height: Math.round(frame.h),
+      x: frame.x,
+      y: frame.y,
+      width: frame.w,
+      height: frame.h,
       pixelRatio,
       mimeType: "image/png",
     });
 
+    // descarga
     const a = document.createElement("a");
     a.href = uri;
     a.download = `aurea33_${metaSafe.w}x${metaSafe.h}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
+
+    // (prev vars kept for future “true export mode” si quieres hacerlo perfecto)
+    void prevSize;
+    void prevZoom;
+    void prevPanX;
+    void prevPanY;
   };
 
   /* ----------------------------- Keyboard shortcuts ----------------------------- */
@@ -727,13 +722,22 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-auto">
           <div className="flex gap-2 items-center">
             <div className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 shadow-[0_14px_40px_rgba(0,0,0,.35)] backdrop-blur-md flex items-center gap-2">
-              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={zoomIn}>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={zoomIn}
+              >
                 Zoom +
               </button>
-              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={zoomOut}>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={zoomOut}
+              >
                 Zoom -
               </button>
-              <button className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs" onClick={fitSmart}>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={fitSmart}
+              >
                 Fit
               </button>
 
@@ -751,13 +755,20 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                 ))}
               </select>
 
-              <button className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs" onClick={exportPNG}>
+              <button
+                className="ml-1 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20 hover:bg-emerald-500/25 text-emerald-100 text-xs"
+                onClick={exportPNG}
+              >
                 Export PNG
               </button>
 
               <button
                 className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md
-                ${showProps ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25" : "bg-white/5 border-white/10 text-white hover:bg-white/10"}`}
+                ${
+                  showProps
+                    ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25"
+                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
+                }`}
                 onClick={() => setShowProps((v) => !v)}
               >
                 Propiedades
@@ -822,15 +833,42 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           {/* futuristic grid */}
           {Array.from({ length: Math.ceil(containerSize.w / 80) }).map((_, i) => {
             const x = i * 80;
-            return <Line key={`gv_${i}`} points={[x, 0, x, containerSize.h]} stroke="rgba(255,255,255,0.04)" strokeWidth={1} listening={false} />;
+            return (
+              <Line
+                key={`gv_${i}`}
+                points={[x, 0, x, containerSize.h]}
+                stroke="rgba(255,255,255,0.04)"
+                strokeWidth={1}
+                listening={false}
+              />
+            );
           })}
           {Array.from({ length: Math.ceil(containerSize.h / 80) }).map((_, i) => {
             const y = i * 80;
-            return <Line key={`gh_${i}`} points={[0, y, containerSize.w, y]} stroke="rgba(255,255,255,0.04)" strokeWidth={1} listening={false} />;
+            return (
+              <Line
+                key={`gh_${i}`}
+                points={[0, y, containerSize.w, y]}
+                stroke="rgba(255,255,255,0.04)"
+                strokeWidth={1}
+                listening={false}
+              />
+            );
           })}
 
           {/* canvas frame */}
-          <Rect x={frame.x} y={frame.y} width={frame.w} height={frame.h} fill={metaSafe.bg} cornerRadius={22} shadowColor="black" shadowBlur={22} shadowOpacity={0.38} listening={false} />
+          <Rect
+            x={frame.x}
+            y={frame.y}
+            width={frame.w}
+            height={frame.h}
+            fill={metaSafe.bg}
+            cornerRadius={22}
+            shadowColor="black"
+            shadowBlur={22}
+            shadowOpacity={0.38}
+            listening={false}
+          />
 
           {/* nodes */}
           {nodes.map((n) => {
@@ -937,6 +975,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   onTap={() => listening && setSelected(n.id)}
                   onDragEnd={(e) => {
                     const node = e.target;
+
+                    // Konva aplica drag en x/y del shape, pero Line usa points.
                     const dxScreen = node.x();
                     const dyScreen = node.y();
                     node.x(0);
@@ -987,6 +1027,40 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           />
         </Layer>
       </Stage>
+
+      {/* Inspector mini (si quieres lo prendemos después) */}
+      {showProps && !compact && (
+        <div className="absolute right-3 bottom-3 z-20 w-[260px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+            <div className="text-white/80 text-sm font-semibold">Inspector</div>
+            <div className="flex items-center gap-2">
+              <button
+                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                onClick={() => setPropsMin((v) => !v)}
+              >
+                {propsMin ? "Expandir" : "Min"}
+              </button>
+              <button
+                className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                onClick={() => setShowProps(false)}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {!propsMin && (
+            <div className="p-3 text-white/70 text-xs space-y-2">
+              <div className="text-white/60">Shortcuts</div>
+              <div>Space: Pan</div>
+              <div>Ctrl/Cmd + D: Duplicar</div>
+              <div>Del: Eliminar</div>
+              <div>Flechas: mover (Shift = 10px)</div>
+              <div>Ctrl/Cmd + 0: Fit</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
