@@ -133,13 +133,11 @@ const BackgroundImageNode = React.memo(function BackgroundImageNode({ n, frame, 
   const fit = n?.fit === "contain" ? "contain" : "cover";
   const opacity = clamp(safeNum(n?.opacity, 1), 0, 1);
 
-  // Rect en "doc space" dentro del canvas frame (no deformar)
   const rectDoc = useMemo(() => {
     if (!img) return { x: 0, y: 0, width: canvasW, height: canvasH };
     return computeFitRect(img.width, img.height, canvasW, canvasH, fit);
   }, [img, canvasW, canvasH, fit]);
 
-  // Convert doc->screen usando frame (escala y offset del frame)
   const x = frame.x + rectDoc.x * frame.scale;
   const y = frame.y + rectDoc.y * frame.scale;
   const w = rectDoc.width * frame.scale;
@@ -189,7 +187,10 @@ const ImageNode = React.memo(function ImageNode({
   const rotation = safeNum(n.rotation, 0);
 
   const crop = n.crop && typeof n.crop === "object" ? n.crop : null;
-  const listening = typeof n.listening === "boolean" ? n.listening : true;
+
+  const locked = !!n.locked;
+  const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+  const draggable = !locked && !isSpaceDown && !editingId && listening;
 
   return (
     <KonvaImage
@@ -202,7 +203,7 @@ const ImageNode = React.memo(function ImageNode({
       rotation={rotation}
       opacity={opacity}
       crop={crop || undefined}
-      draggable={!isSpaceDown && !editingId && listening}
+      draggable={draggable}
       hitStrokeWidth={12}
       perfectDrawEnabled={false}
       listening={listening}
@@ -217,10 +218,14 @@ const ImageNode = React.memo(function ImageNode({
         setShowProps(true);
       }}
       onDragEnd={(e) => {
+        if (locked) return;
         const docPos = screenToDoc(e.target.x(), e.target.y());
         updateNode(n.id, { x: docPos.x, y: docPos.y });
       }}
-      onTransformEnd={(e) => onTransformEnd(e, n)}
+      onTransformEnd={(e) => {
+        if (locked) return;
+        onTransformEnd(e, n);
+      }}
     />
   );
 });
@@ -244,7 +249,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [editingBox, setEditingBox] = useState(null);
   const textareaRef = useRef(null);
 
-  // Floating panels
+  // Panels
   const [showProps, setShowProps] = useState(true);
   const [propsMin, setPropsMin] = useState(false);
 
@@ -280,9 +285,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const panX = metaSafe.panX;
   const panY = metaSafe.panY;
 
-  // ✅ Background node detect (first match)
   const bgNode = useMemo(() => nodes.find((n) => n?.type === "image" && n?.isBackground), [nodes]);
   const fgNodes = useMemo(() => nodes.filter((n) => !(n?.type === "image" && n?.isBackground)), [nodes]);
+
+  const selectedNodeModel = useMemo(() => nodes.find((n) => n.id === selectedId) || null, [nodes, selectedId]);
+  const selectedLocked = !!selectedNodeModel?.locked;
 
   /* ----------------------------- Commit helpers ----------------------------- */
 
@@ -313,7 +320,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
   const deleteSelected = useCallback(() => {
     if (!selectedId) return;
-    const next = nodes.filter((n) => n.id !== selectedId);
+    const n = nodes.find((x) => x.id === selectedId);
+    if (!n) return;
+    if (n.isBackground) return; // no borrar bg aquí
+    if (n.locked) return; // no borrar locked
+    const next = nodes.filter((x) => x.id !== selectedId);
     commit({ nodes: next, selectedId: null });
   }, [commit, nodes, selectedId]);
 
@@ -321,6 +332,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     if (!selectedId) return;
     const n = nodes.find((x) => x.id === selectedId);
     if (!n) return;
+    if (n.isBackground) return;
+    if (n.locked) return;
 
     const copy = { ...n, id: uid() };
 
@@ -346,6 +359,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       if (!selectedId) return;
       const n = nodes.find((x) => x.id === selectedId);
       if (!n) return;
+      if (n.isBackground) return;
+      if (n.locked) return;
 
       if (n.type === "line" && Array.isArray(n.points)) {
         const pts = n.points.slice();
@@ -405,25 +420,27 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   }, [containerSize.w, containerSize.h, metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
   /* ----------------------------- Transformer attach ----------------------------- */
+
   useEffect(() => {
     const stage = stageRef.current;
     const tr = trRef.current;
     if (!stage || !tr) return;
 
-    // ✅ No permitir seleccionar background (aunque alguien lo setee por error)
-    const effectiveSelected = selectedId && bgNode && selectedId === bgNode.id ? null : selectedId;
+    // No seleccionar bg y no transformar locked
+    const effectiveSelected =
+      selectedId && bgNode && selectedId === bgNode.id ? null : selectedLocked ? null : selectedId;
 
-    const selectedNode = effectiveSelected ? stage.findOne((node) => node.id() === effectiveSelected) : null;
+    const selectedKonva = effectiveSelected ? stage.findOne((node) => node.id() === effectiveSelected) : null;
 
-    if (selectedNode) {
-      tr.nodes([selectedNode]);
+    if (selectedKonva) {
+      tr.nodes([selectedKonva]);
       tr.getLayer()?.batchDraw();
     } else {
       tr.nodes([]);
       tr.getLayer()?.batchDraw();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, fgNodes.length, bgNode?.id]);
+  }, [selectedId, selectedLocked, fgNodes.length, bgNode?.id]);
 
   /* ----------------------------- Pointer helpers ----------------------------- */
 
@@ -648,6 +665,148 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
+  /* ----------------------------- Layer ops (Send front/back + lock) ----------------------------- */
+
+  const reorderSelected = useCallback(
+    (mode) => {
+      if (!selectedId) return;
+      const n = nodes.find((x) => x.id === selectedId);
+      if (!n) return;
+      if (n.isBackground) return;
+
+      const bg = nodes.find((x) => x.isBackground);
+      const fg = nodes.filter((x) => !x.isBackground);
+
+      const idx = fg.findIndex((x) => x.id === selectedId);
+      if (idx < 0) return;
+
+      const swap = (a, b) => {
+        const next = fg.slice();
+        const tmp = next[a];
+        next[a] = next[b];
+        next[b] = tmp;
+        return next;
+      };
+
+      let nextFg = fg;
+
+      if (mode === "front") {
+        nextFg = fg.filter((x) => x.id !== selectedId).concat(fg[idx]);
+      } else if (mode === "back") {
+        nextFg = [fg[idx]].concat(fg.filter((x) => x.id !== selectedId));
+      } else if (mode === "forward") {
+        if (idx < fg.length - 1) nextFg = swap(idx, idx + 1);
+      } else if (mode === "backward") {
+        if (idx > 0) nextFg = swap(idx, idx - 1);
+      }
+
+      const next = bg ? [bg, ...nextFg] : nextFg;
+      commit({ nodes: next });
+    },
+    [commit, nodes, selectedId]
+  );
+
+  const toggleLockSelected = useCallback(() => {
+    if (!selectedId) return;
+    const n = nodes.find((x) => x.id === selectedId);
+    if (!n) return;
+    if (n.isBackground) return;
+    updateNode(selectedId, { locked: !n.locked });
+  }, [nodes, selectedId, updateNode]);
+
+  /* ----------------------------- Drag & Drop images ----------------------------- */
+
+  const addImageAt = useCallback(
+    async ({ dataUrl, xDoc, yDoc }) => {
+      // medir tamaño real (para inicializar nice)
+      const img = await new Promise((resolve) => {
+        const im = new window.Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => resolve(null);
+        im.src = dataUrl;
+      });
+
+      const maxW = metaSafe.w * 0.55;
+      const maxH = metaSafe.h * 0.55;
+
+      let w = img?.width || 900;
+      let h = img?.height || 900;
+
+      const s = Math.min(maxW / w, maxH / h, 1);
+      w = Math.max(40, w * s);
+      h = Math.max(40, h * s);
+
+      const node = {
+        id: uid(),
+        type: "image",
+        src: dataUrl,
+        x: xDoc - w / 2,
+        y: yDoc - h / 2,
+        width: w,
+        height: h,
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+        listening: true,
+      };
+
+      const bg = nodes.find((x) => x.isBackground);
+      const fg = nodes.filter((x) => !x.isBackground);
+      const next = bg ? [bg, ...fg, node] : [...fg, node];
+
+      commit({ nodes: next, selectedId: node.id });
+    },
+    [commit, metaSafe.w, metaSafe.h, nodes]
+  );
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onDragOver = (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    };
+
+    const onDrop = async (e) => {
+      e.preventDefault();
+      if (!stageRef.current) return;
+
+      const files = Array.from(e.dataTransfer?.files || []);
+      const imgFiles = files.filter((f) => /^image\//.test(f.type));
+      if (!imgFiles.length) return;
+
+      // coord screen dentro del container
+      const rect = el.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+
+      // convertir a doc coords
+      const p = screenToDoc(sx, sy);
+      const xDoc = clamp(p.x, 0, metaSafe.w);
+      const yDoc = clamp(p.y, 0, metaSafe.h);
+
+      // carga 1 por 1 (primero el primero)
+      for (const f of imgFiles) {
+        const dataUrl = await new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(String(fr.result || ""));
+          fr.onerror = () => resolve("");
+          fr.readAsDataURL(f);
+        });
+        if (!dataUrl) continue;
+        await addImageAt({ dataUrl, xDoc, yDoc });
+      }
+    };
+
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("drop", onDrop);
+    return () => {
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, [addImageAt, metaSafe.w, metaSafe.h, screenToDoc]);
+
   /* ----------------------------- UI actions ----------------------------- */
 
   const fitSmart = useCallback(() => commitMeta({ panX: 0, panY: 0, zoom: 1 }), [commitMeta]);
@@ -727,6 +886,25 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         fitSmart();
       }
 
+      // Layers:
+      // ] forward | [ backward | Shift+] front | Shift+[ back
+      if (ev.key === "]") {
+        ev.preventDefault();
+        reorderSelected(ev.shiftKey ? "front" : "forward");
+      }
+      if (ev.key === "[") {
+        ev.preventDefault();
+        reorderSelected(ev.shiftKey ? "back" : "backward");
+      }
+
+      // Lock toggle: L
+      if (ev.key === "l" || ev.key === "L") {
+        if (selectedId) {
+          ev.preventDefault();
+          toggleLockSelected();
+        }
+      }
+
       const step = ev.shiftKey ? 10 : 1;
       if (ev.key === "ArrowLeft") {
         ev.preventDefault();
@@ -756,7 +934,18 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [editingId, closeTextEditor, deleteSelected, duplicateSelected, nudgeSelected, selectedId, setSelected, fitSmart]);
+  }, [
+    editingId,
+    closeTextEditor,
+    deleteSelected,
+    duplicateSelected,
+    nudgeSelected,
+    selectedId,
+    setSelected,
+    fitSmart,
+    reorderSelected,
+    toggleLockSelected,
+  ]);
 
   const cursorStyle = isSpaceDown || isPanning ? "grabbing" : "default";
   const presetValue = metaSafe.presetKey || presetByWH(metaSafe.w, metaSafe.h);
@@ -809,6 +998,38 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                 Export PNG
               </button>
 
+              <div className="w-px h-7 bg-white/10 mx-1" />
+
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={() => reorderSelected("back")}
+                disabled={!selectedId || selectedLocked}
+                title="Send to Back (Shift+[)"
+              >
+                Back
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs"
+                onClick={() => reorderSelected("front")}
+                disabled={!selectedId || selectedLocked}
+                title="Send to Front (Shift+])"
+              >
+                Front
+              </button>
+
+              <button
+                className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md ${
+                  selectedId && selectedLocked
+                    ? "bg-red-500/15 border-red-400/25 text-red-100 hover:bg-red-500/25"
+                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
+                }`}
+                onClick={toggleLockSelected}
+                disabled={!selectedId}
+                title="Lock/Unlock (L)"
+              >
+                {selectedLocked ? "Locked" : "Lock"}
+              </button>
+
               <button
                 className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md
                 ${
@@ -818,13 +1039,13 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                 }`}
                 onClick={() => setShowProps((v) => !v)}
               >
-                Propiedades
+                Capas
               </button>
             </div>
           </div>
 
           <div className="px-3 py-2 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md text-white/70 text-xs">
-            {metaSafe.w}×{metaSafe.h} • zoom {zoom.toFixed(2)}
+            {metaSafe.w}×{metaSafe.h} • zoom {zoom.toFixed(2)} • drop imágenes aquí ✨
           </div>
         </div>
       )}
@@ -917,12 +1138,10 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             listening={false}
           />
 
-          {/* ✅ PRO Background Slot (cover/contain + opacity + locked) */}
-          {bgNode ? (
-            <BackgroundImageNode n={bgNode} frame={frame} canvasW={metaSafe.w} canvasH={metaSafe.h} />
-          ) : null}
+          {/* Background slot */}
+          {bgNode ? <BackgroundImageNode n={bgNode} frame={frame} canvasW={metaSafe.w} canvasH={metaSafe.h} /> : null}
 
-          {/* nodes (foreground only) */}
+          {/* nodes */}
           {fgNodes.map((n) => {
             if (n.type === "image") {
               return (
@@ -934,7 +1153,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   editingId={editingId}
                   setSelected={setSelected}
                   setShowProps={setShowProps}
-                  screenToDoc={screenToDoc}
+                  screenToDoc={(sx, sy) => {
+                    const dx = (sx - frame.x) / frame.scale;
+                    const dy = (sy - frame.y) / frame.scale;
+                    return { x: dx, y: dy };
+                  }}
                   updateNode={updateNode}
                   onTransformEnd={onTransformEnd}
                 />
@@ -943,7 +1166,10 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
             if (n.type === "rect") {
               const p = docToScreen(n.x || 0, n.y || 0);
-              const listening = typeof n.listening === "boolean" ? n.listening : true;
+              const locked = !!n.locked;
+              const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+              const draggable = !locked && !isSpaceDown && !editingId && listening;
+
               return (
                 <Rect
                   key={n.id}
@@ -958,24 +1184,31 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
                   stroke={n.stroke || undefined}
                   strokeWidth={n.strokeWidth ? n.strokeWidth * frame.scale : undefined}
-                  draggable={!isSpaceDown && !editingId && listening}
+                  draggable={draggable}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
                   listening={listening}
                   onClick={() => listening && setSelected(n.id)}
                   onTap={() => listening && setSelected(n.id)}
                   onDragEnd={(e) => {
+                    if (locked) return;
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
                   }}
-                  onTransformEnd={(e) => onTransformEnd(e, n)}
+                  onTransformEnd={(e) => {
+                    if (locked) return;
+                    onTransformEnd(e, n);
+                  }}
                 />
               );
             }
 
             if (n.type === "text") {
               const p = docToScreen(n.x || 0, n.y || 0);
-              const listening = typeof n.listening === "boolean" ? n.listening : true;
+              const locked = !!n.locked;
+              const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+              const draggable = !locked && !isSpaceDown && !editingId && listening;
+
               return (
                 <Text
                   key={n.id}
@@ -989,26 +1222,33 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   rotation={safeNum(n.rotation, 0)}
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
                   lineHeight={safeNum(n.lineHeight, 1.2)}
-                  draggable={!isSpaceDown && !editingId && listening}
+                  draggable={draggable}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
                   listening={listening}
                   onClick={() => listening && setSelected(n.id)}
                   onTap={() => listening && setSelected(n.id)}
-                  onDblClick={() => listening && openTextEditor(n)}
-                  onDblTap={() => listening && openTextEditor(n)}
+                  onDblClick={() => !locked && listening && openTextEditor(n)}
+                  onDblTap={() => !locked && listening && openTextEditor(n)}
                   onDragEnd={(e) => {
+                    if (locked) return;
                     const docPos = screenToDoc(e.target.x(), e.target.y());
                     updateNode(n.id, { x: docPos.x, y: docPos.y });
                   }}
-                  onTransformEnd={(e) => onTransformEnd(e, n)}
+                  onTransformEnd={(e) => {
+                    if (locked) return;
+                    onTransformEnd(e, n);
+                  }}
                 />
               );
             }
 
             if (n.type === "line") {
               const pts = pointsDocToScreen(n.points || []);
-              const listening = typeof n.listening === "boolean" ? n.listening : true;
+              const locked = !!n.locked;
+              const listening = locked ? true : typeof n.listening === "boolean" ? n.listening : true;
+              const draggable = !locked && !isSpaceDown && !editingId && listening;
+
               return (
                 <Line
                   key={n.id}
@@ -1019,13 +1259,14 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   lineCap={n.lineCap || "round"}
                   lineJoin={n.lineJoin || "round"}
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
-                  draggable={!isSpaceDown && !editingId && listening}
+                  draggable={draggable}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
                   listening={listening}
                   onClick={() => listening && setSelected(n.id)}
                   onTap={() => listening && setSelected(n.id)}
                   onDragEnd={(e) => {
+                    if (locked) return;
                     const node = e.target;
 
                     const dxScreen = node.x();
@@ -1043,7 +1284,10 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                     }
                     updateNode(n.id, { points: ptsDoc });
                   }}
-                  onTransformEnd={(e) => onTransformEnd(e, n)}
+                  onTransformEnd={(e) => {
+                    if (locked) return;
+                    onTransformEnd(e, n);
+                  }}
                 />
               );
             }
@@ -1079,11 +1323,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         </Layer>
       </Stage>
 
-      {/* Inspector mini */}
+      {/* Layers panel */}
       {showProps && !compact && (
-        <div className="absolute right-3 bottom-3 z-20 w-[260px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
+        <div className="absolute right-3 bottom-3 z-20 w-[320px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-            <div className="text-white/80 text-sm font-semibold">Inspector</div>
+            <div className="text-white/80 text-sm font-semibold">Capas</div>
             <div className="flex items-center gap-2">
               <button
                 className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
@@ -1101,13 +1345,95 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
           </div>
 
           {!propsMin && (
-            <div className="p-3 text-white/70 text-xs space-y-2">
-              <div className="text-white/60">Shortcuts</div>
-              <div>Space: Pan</div>
-              <div>Ctrl/Cmd + D: Duplicar</div>
-              <div>Del: Eliminar</div>
-              <div>Flechas: mover (Shift = 10px)</div>
-              <div>Ctrl/Cmd + 0: Fit</div>
+            <div className="p-3 space-y-3">
+              <div className="text-white/60 text-xs">
+                Shortcuts: Space Pan • Shift+[ Back • Shift+] Front • [ / ] step • L lock • Del delete • Ctrl+D dup
+              </div>
+
+              <div className="space-y-2 max-h-[260px] overflow-auto pr-1">
+                {/* fgNodes = de atrás a frente; en UI mostramos "arriba=front" */}
+                {[...fgNodes].map((n) => {
+                  const isSel = n.id === selectedId;
+                  const locked = !!n.locked;
+                  const label =
+                    n.type === "image"
+                      ? "Imagen"
+                      : n.type === "text"
+                      ? "Texto"
+                      : n.type === "rect"
+                      ? "Forma"
+                      : n.type === "line"
+                      ? "Línea"
+                      : "Nodo";
+
+                  return (
+                    <div
+                      key={n.id}
+                      className={`flex items-center justify-between gap-2 rounded-xl border px-2 py-2 ${
+                        isSel ? "border-sky-400/40 bg-sky-500/10" : "border-white/10 bg-white/5"
+                      }`}
+                    >
+                      <button
+                        className="flex-1 text-left text-white/80 text-xs truncate"
+                        onClick={() => setSelected(n.id)}
+                        title={n.id}
+                      >
+                        {label} {locked ? "🔒" : ""}
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                          onClick={() => updateNode(n.id, { locked: !locked })}
+                          title="Lock/Unlock"
+                        >
+                          {locked ? "Unlock" : "Lock"}
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                          onClick={() => {
+                            setSelected(n.id);
+                            reorderSelected("backward");
+                          }}
+                          title="Step back ([)"
+                        >
+                          ◀
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                          onClick={() => {
+                            setSelected(n.id);
+                            reorderSelected("forward");
+                          }}
+                          title="Step forward (])"
+                        >
+                          ▶
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                          onClick={() => {
+                            setSelected(n.id);
+                            reorderSelected("back");
+                          }}
+                          title="Send to back (Shift+[)"
+                        >
+                          Back
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/70 text-[11px]"
+                          onClick={() => {
+                            setSelected(n.id);
+                            reorderSelected("front");
+                          }}
+                          title="Send to front (Shift+])"
+                        >
+                          Front
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
