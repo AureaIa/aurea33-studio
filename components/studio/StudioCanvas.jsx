@@ -123,6 +123,38 @@ const presetByWH = (w, h) => {
   return hit?.key || "ig_post";
 };
 
+/* ----------------------------- Fonts Catalog (Text PRO) ----------------------------- */
+
+const FONT_CATALOG = {
+  "Sans Serif": [
+    { label: "Inter", family: "Inter, system-ui" },
+    { label: "Poppins", family: "Poppins, system-ui" },
+    { label: "Montserrat", family: "Montserrat, system-ui" },
+    { label: "Roboto", family: "Roboto, system-ui" },
+    { label: "Oswald", family: "Oswald, system-ui" },
+  ],
+  Serif: [
+    { label: "Playfair Display", family: '"Playfair Display", serif' },
+    { label: "Merriweather", family: "Merriweather, serif" },
+    { label: "Lora", family: "Lora, serif" },
+    { label: "Cinzel", family: "Cinzel, serif" },
+  ],
+  Script: [
+    { label: "Pacifico", family: "Pacifico, cursive" },
+    { label: "Dancing Script", family: '"Dancing Script", cursive' },
+    { label: "Great Vibes", family: '"Great Vibes", cursive' },
+  ],
+  Display: [
+    { label: "Bebas Neue", family: '"Bebas Neue", system-ui' },
+    { label: "Anton", family: "Anton, system-ui" },
+    { label: "Rubik Mono One", family: '"Rubik Mono One", system-ui' },
+  ],
+  Monospace: [
+    { label: "JetBrains Mono", family: '"JetBrains Mono", ui-monospace' },
+    { label: "Space Mono", family: '"Space Mono", ui-monospace' },
+  ],
+};
+
 /* ----------------------------- Layer helpers (no hooks here) ----------------------------- */
 
 function moveLayer(nodes, selectedId, dir) {
@@ -625,7 +657,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     [editingId, zoom, frame.baseFit, metaSafe.w, metaSafe.h, containerSize.w, containerSize.h, panX, panY, commitMeta]
   );
 
-  /* ----------------------------- Transform correctness ----------------------------- */
+  /* ----------------------------- Transform correctness (TEXT FIX: resize box) ----------------------------- */
 
   const onTransformEnd = useCallback(
     (e, nodeModel) => {
@@ -656,14 +688,16 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       }
 
       if (nodeModel.type === "text") {
-        const baseFont = nodeModel.fontSize || 32;
-        const nextFont = clamp(baseFont * scaleY, 8, 512);
+        // ✅ Canva-style: resize real del cuadro, NO escala fontSize automáticamente
+        const newW = Math.max(40, (node.width() * scaleX) / frame.scale);
+        const newH = Math.max(20, (node.height() * scaleY) / frame.scale);
 
         updateNode(nodeModel.id, {
           x: docPos.x,
           y: docPos.y,
           rotation: node.rotation(),
-          fontSize: nextFont,
+          width: newW,
+          height: newH,
         });
         return;
       }
@@ -704,8 +738,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         rotation: textNodeModel.rotation || 0,
         fill: textNodeModel.fill || "#E9EEF9",
         fontFamily: textNodeModel.fontFamily || "Inter, system-ui",
-        fontSizePx: (textNodeModel.fontSize || 32) * frame.scale,
-        lineHeight: textNodeModel.lineHeight || 1.2,
+        fontSizePx: (safeNum(textNodeModel.fontSize, 64)) * frame.scale,
+        lineHeight: safeNum(textNodeModel.lineHeight, 1.1),
       });
 
       setSelected(textNodeModel.id);
@@ -908,7 +942,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     a.remove();
   };
 
-  /* ----------------------------- Keyboard shortcuts (optional keep) ----------------------------- */
+  /* ----------------------------- Keyboard shortcuts (keep) ----------------------------- */
 
   useEffect(() => {
     const onKeyDown = (ev) => {
@@ -1025,7 +1059,9 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
               <button
                 className={`ml-1 px-3 py-2 rounded-xl border text-xs backdrop-blur-md ${
-                  showProps ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25" : "bg-white/5 border-white/10 text-white hover:bg-white/10"
+                  showProps
+                    ? "bg-amber-500/15 border-amber-400/25 text-amber-100 hover:bg-amber-500/25"
+                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"
                 }`}
                 onClick={() => setShowProps((v) => !v)}
               >
@@ -1040,7 +1076,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         </div>
       )}
 
-      {/* Floating toolbar (Canva-like) */}
+      {/* Floating toolbar (Canva-like + Text PRO tools) */}
       {toolbarBox && selectedNodeModel && !selectedNodeModel.isBackground && (
         <div
           className="absolute z-40"
@@ -1083,6 +1119,92 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             <button onClick={() => rotateSelected(+15)} disabled={!selectedId || selectedLocked} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 text-xs disabled:opacity-40" title="Rotar +15°">
               ↻
             </button>
+
+            {/* TEXT PRO (solo si es texto) */}
+            {selectedNodeModel?.type === "text" && !selectedLocked && (
+              <>
+                <div className="w-px h-7 bg-white/10 mx-1" />
+
+                <select
+                  className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs outline-none max-w-[190px]"
+                  value={selectedNodeModel.fontFamily || "Inter, system-ui"}
+                  onChange={(e) => updateNode(selectedId, { fontFamily: e.target.value })}
+                  title="Tipografía"
+                >
+                  {Object.entries(FONT_CATALOG).map(([group, items]) => (
+                    <optgroup key={group} label={group} className="bg-[#0B1220] text-white">
+                      {items.map((f) => (
+                        <option key={f.label} value={f.family} className="bg-[#0B1220] text-white">
+                          {f.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+
+                <input
+                  type="number"
+                  className="w-[84px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                  value={Math.round(safeNum(selectedNodeModel.fontSize, 64))}
+                  onChange={(e) => updateNode(selectedId, { fontSize: clamp(Number(e.target.value || 0), 8, 512) })}
+                  title="Tamaño"
+                />
+
+                <input
+                  type="number"
+                  step="0.05"
+                  className="w-[84px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                  value={safeNum(selectedNodeModel.lineHeight, 1.1)}
+                  onChange={(e) => updateNode(selectedId, { lineHeight: clamp(Number(e.target.value || 0), 0.6, 3) })}
+                  title="Interlineado"
+                />
+
+                <input
+                  type="number"
+                  step="0.5"
+                  className="w-[84px] px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs outline-none"
+                  value={safeNum(selectedNodeModel.letterSpacing, 0)}
+                  onChange={(e) => updateNode(selectedId, { letterSpacing: clamp(Number(e.target.value || 0), -10, 40) })}
+                  title="Kerning (letter spacing)"
+                />
+
+                <div className="flex items-center gap-1">
+                  <button
+                    className={`px-3 py-2 rounded-xl border text-xs ${
+                      (selectedNodeModel.align || "left") === "left"
+                        ? "bg-sky-500/15 border-sky-400/25 text-sky-100"
+                        : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                    }`}
+                    onClick={() => updateNode(selectedId, { align: "left" })}
+                    title="Alinear izquierda"
+                  >
+                    L
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-xl border text-xs ${
+                      (selectedNodeModel.align || "left") === "center"
+                        ? "bg-sky-500/15 border-sky-400/25 text-sky-100"
+                        : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                    }`}
+                    onClick={() => updateNode(selectedId, { align: "center" })}
+                    title="Centrar"
+                  >
+                    C
+                  </button>
+                  <button
+                    className={`px-3 py-2 rounded-xl border text-xs ${
+                      (selectedNodeModel.align || "left") === "right"
+                        ? "bg-sky-500/15 border-sky-400/25 text-sky-100"
+                        : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                    }`}
+                    onClick={() => updateNode(selectedId, { align: "right" })}
+                    title="Alinear derecha"
+                  >
+                    R
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1234,12 +1356,16 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   x={p.x}
                   y={p.y}
                   text={safeStr(n.text, "")}
-                  fontSize={safeNum(n.fontSize, 32) * frame.scale}
+                  width={(safeNum(n.width, 520)) * frame.scale}
+                  height={(safeNum(n.height, 120)) * frame.scale}
+                  fontSize={safeNum(n.fontSize, 64) * frame.scale}
                   fontFamily={safeStr(n.fontFamily, "Inter, system-ui")}
                   fill={safeStr(n.fill, "#E9EEF9")}
                   rotation={safeNum(n.rotation, 0)}
                   opacity={clamp(safeNum(n.opacity, 1), 0, 1)}
-                  lineHeight={safeNum(n.lineHeight, 1.2)}
+                  lineHeight={safeNum(n.lineHeight, 1.1)}
+                  letterSpacing={safeNum(n.letterSpacing, 0)}
+                  align={safeStr(n.align, "left")}
                   draggable={draggable}
                   hitStrokeWidth={12}
                   perfectDrawEnabled={false}
@@ -1358,7 +1484,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
 
           {!propsMin && (
             <div className="p-3 space-y-3">
-              <div className="text-white/60 text-xs">Tip: usa la barra flotante sobre el objeto para Lock / Capas / Rotar.</div>
+              <div className="text-white/60 text-xs">Tip: usa la barra flotante sobre el objeto para Lock / Capas / Rotar. (Texto: fuente/tamaño/interlineado/kerning/alinear)</div>
 
               <div className="space-y-2 max-h-[260px] overflow-auto pr-1">
                 {[...fgNodes].map((n) => {
