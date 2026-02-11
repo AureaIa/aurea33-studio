@@ -83,6 +83,28 @@ function useHtmlImage(src) {
   return img;
 }
 
+/* ----------------------------- Background Fit (cover/contain) ----------------------------- */
+
+function computeFitRect(imgW, imgH, frameW, frameH, fit = "cover") {
+  if (!imgW || !imgH || !frameW || !frameH) {
+    return { x: 0, y: 0, width: frameW || 0, height: frameH || 0 };
+  }
+
+  const sCover = Math.max(frameW / imgW, frameH / imgH);
+  const sContain = Math.min(frameW / imgW, frameH / imgH);
+  const s = fit === "contain" ? sContain : sCover;
+
+  const w = imgW * s;
+  const h = imgH * s;
+
+  return {
+    x: (frameW - w) / 2,
+    y: (frameH - h) / 2,
+    width: w,
+    height: h,
+  };
+}
+
 /* ----------------------------- Presets ----------------------------- */
 
 const CANVAS_PRESETS = [
@@ -101,6 +123,42 @@ const presetByWH = (w, h) => {
   const hit = CANVAS_PRESETS.find((p) => p.w === w && p.h === h);
   return hit?.key || "ig_post";
 };
+
+/* ----------------------------- Background Node (PRO) ----------------------------- */
+
+const BackgroundImageNode = React.memo(function BackgroundImageNode({ n, frame, canvasW, canvasH }) {
+  const src = getImageSrc(n);
+  const img = useHtmlImage(src);
+
+  const fit = n?.fit === "contain" ? "contain" : "cover";
+  const opacity = clamp(safeNum(n?.opacity, 1), 0, 1);
+
+  // Rect en "doc space" dentro del canvas frame (no deformar)
+  const rectDoc = useMemo(() => {
+    if (!img) return { x: 0, y: 0, width: canvasW, height: canvasH };
+    return computeFitRect(img.width, img.height, canvasW, canvasH, fit);
+  }, [img, canvasW, canvasH, fit]);
+
+  // Convert doc->screen usando frame (escala y offset del frame)
+  const x = frame.x + rectDoc.x * frame.scale;
+  const y = frame.y + rectDoc.y * frame.scale;
+  const w = rectDoc.width * frame.scale;
+  const h = rectDoc.height * frame.scale;
+
+  return (
+    <KonvaImage
+      id={n.id}
+      x={x}
+      y={y}
+      width={w}
+      height={h}
+      image={img || undefined}
+      opacity={opacity}
+      listening={false}
+      perfectDrawEnabled={false}
+    />
+  );
+});
 
 /* ----------------------------- Image Node (memo) ----------------------------- */
 
@@ -186,7 +244,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const [editingBox, setEditingBox] = useState(null);
   const textareaRef = useRef(null);
 
-  // Floating panels (CanvasEditor puede abrirlo)
+  // Floating panels
   const [showProps, setShowProps] = useState(true);
   const [propsMin, setPropsMin] = useState(false);
 
@@ -221,6 +279,10 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
   const zoom = metaSafe.zoom;
   const panX = metaSafe.panX;
   const panY = metaSafe.panY;
+
+  // ✅ Background node detect (first match)
+  const bgNode = useMemo(() => nodes.find((n) => n?.type === "image" && n?.isBackground), [nodes]);
+  const fgNodes = useMemo(() => nodes.filter((n) => !(n?.type === "image" && n?.isBackground)), [nodes]);
 
   /* ----------------------------- Commit helpers ----------------------------- */
 
@@ -342,14 +404,16 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     return { x, y, w, h, scale, baseFit };
   }, [containerSize.w, containerSize.h, metaSafe.w, metaSafe.h, zoom, panX, panY]);
 
-  /* ----------------------------- Transformer attach (FIX) ----------------------------- */
-  // ✅ FIX: buscar por `id` (no selector #) para evitar problemas si el id trae chars raros.
+  /* ----------------------------- Transformer attach ----------------------------- */
   useEffect(() => {
     const stage = stageRef.current;
     const tr = trRef.current;
     if (!stage || !tr) return;
 
-    const selectedNode = selectedId ? stage.findOne((node) => node.id() === selectedId) : null;
+    // ✅ No permitir seleccionar background (aunque alguien lo setee por error)
+    const effectiveSelected = selectedId && bgNode && selectedId === bgNode.id ? null : selectedId;
+
+    const selectedNode = effectiveSelected ? stage.findOne((node) => node.id() === effectiveSelected) : null;
 
     if (selectedNode) {
       tr.nodes([selectedNode]);
@@ -358,7 +422,8 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       tr.nodes([]);
       tr.getLayer()?.batchDraw();
     }
-  }, [selectedId, nodes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, fgNodes.length, bgNode?.id]);
 
   /* ----------------------------- Pointer helpers ----------------------------- */
 
@@ -482,7 +547,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       const scaleX = node.scaleX();
       const scaleY = node.scaleY();
 
-      // reset scale en konva (guardamos en doc en unidades "doc")
       node.scaleX(1);
       node.scaleY(1);
 
@@ -597,21 +661,11 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
     setSelected(null);
   };
 
-  // ✅ FIX export: render real canvas tamaño doc, no el viewport (evita export chiquito/borroso)
   const exportPNG = () => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    // hacemos un "snapshot" temporal: 1) stage = doc size 2) frame = 0,0 scale=1
-    const prevSize = { w: stage.width(), h: stage.height() };
-
-    const prevMeta = metaSafe;
-    const prevZoom = prevMeta.zoom;
-    const prevPanX = prevMeta.panX;
-    const prevPanY = prevMeta.panY;
-
-    // no tocamos estado react para no re-render: solo exportamos con draw override
-    const pixelRatio = 2; // retina
+    const pixelRatio = 2;
     const uri = stage.toDataURL({
       x: frame.x,
       y: frame.y,
@@ -621,19 +675,12 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
       mimeType: "image/png",
     });
 
-    // descarga
     const a = document.createElement("a");
     a.href = uri;
     a.download = `aurea33_${metaSafe.w}x${metaSafe.h}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-
-    // (prev vars kept for future “true export mode” si quieres hacerlo perfecto)
-    void prevSize;
-    void prevZoom;
-    void prevPanX;
-    void prevPanY;
   };
 
   /* ----------------------------- Keyboard shortcuts ----------------------------- */
@@ -870,8 +917,13 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
             listening={false}
           />
 
-          {/* nodes */}
-          {nodes.map((n) => {
+          {/* ✅ PRO Background Slot (cover/contain + opacity + locked) */}
+          {bgNode ? (
+            <BackgroundImageNode n={bgNode} frame={frame} canvasW={metaSafe.w} canvasH={metaSafe.h} />
+          ) : null}
+
+          {/* nodes (foreground only) */}
+          {fgNodes.map((n) => {
             if (n.type === "image") {
               return (
                 <ImageNode
@@ -976,7 +1028,6 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
                   onDragEnd={(e) => {
                     const node = e.target;
 
-                    // Konva aplica drag en x/y del shape, pero Line usa points.
                     const dxScreen = node.x();
                     const dyScreen = node.y();
                     node.x(0);
@@ -1028,7 +1079,7 @@ export default function StudioCanvas({ doc, onChange, compact = false }) {
         </Layer>
       </Stage>
 
-      {/* Inspector mini (si quieres lo prendemos después) */}
+      {/* Inspector mini */}
       {showProps && !compact && (
         <div className="absolute right-3 bottom-3 z-20 w-[260px] rounded-2xl border border-white/10 bg-black/30 backdrop-blur-xl shadow-[0_20px_70px_rgba(0,0,0,.55)] overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
