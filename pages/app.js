@@ -526,6 +526,10 @@ export default function AppPage() {
   // Abort
   const abortRef = useRef(null);
 
+  // ✅ SaaS Pro: debounce guardado studio
+const studioSaveTimeoutRef = useRef(null);
+
+
   // Scroll refs
   const chatListRef = useRef(null);
   const imgListRef = useRef(null);
@@ -2250,31 +2254,39 @@ export default function AppPage() {
                   const canvasDoc = activeDocEntry?.doc;
 
                   const setCanvasDoc = (nextDoc) => {
-                    const nextStudio = {
-                      ...studioSafe,
-                      docs: (studioSafe.docs || []).map((d) =>
-                        d.id === studioSafe.meta.activeDocId ? { ...d, updatedAt: uidNow(), doc: nextDoc } : d
-                      ),
-                    };
+  const nextStudio = {
+    ...studioSafe,
+    docs: (studioSafe.docs || []).map((d) =>
+      d.id === studioSafe.meta.activeDocId
+        ? { ...d, updatedAt: uidNow(), doc: nextDoc }
+        : d
+    ),
+  };
 
-                    // ✅ Persistimos en proyecto
-                    updateProjectTab("studio", nextStudio);
+  // ✅ Actualiza proyecto inmediatamente (estado React)
+  updateProjectTab("studio", nextStudio);
 
-                    // ✅ SaaS Pro: persistencia inmediata por refresh
-                    if (user?.uid && activeProjectId) {
-                      saveStudioDocLS(user.uid, activeProjectId, nextDoc);
+  // ✅ Debounce guardado localStorage (700ms)
+  if (user?.uid && activeProjectId) {
+    if (studioSaveTimeoutRef.current) {
+      clearTimeout(studioSaveTimeoutRef.current);
+    }
 
-                      // ✅ mini-book index (sin thumbnail real por ahora; si CanvasEditor manda previewThumb, lo guardamos)
-                      upsertStudioIndexEntry(user.uid, {
-                        id: `${activeProjectId}:${studioSafe.meta.activeDocId}`,
-                        projectId: activeProjectId,
-                        docId: studioSafe.meta.activeDocId,
-                        title: activeProject?.title || "Proyecto",
-                        meta: nextDoc?.meta || null,
-                        thumb: null, // si luego CanvasEditor te manda thumb, lo metemos aquí
-                      });
-                    }
-                  };
+    studioSaveTimeoutRef.current = setTimeout(() => {
+      saveStudioDocLS(user.uid, activeProjectId, nextDoc);
+
+      upsertStudioIndexEntry(user.uid, {
+        id: `${activeProjectId}:${studioSafe.meta.activeDocId}`,
+        projectId: activeProjectId,
+        docId: studioSafe.meta.activeDocId,
+        title: activeProject?.title || "Proyecto",
+        meta: nextDoc?.meta || null,
+        thumb: null,
+      });
+    }, 700);
+  }
+};
+
 
                   return (
                     <div style={studioCleanWrap()}>
