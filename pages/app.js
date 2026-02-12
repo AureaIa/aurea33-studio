@@ -25,26 +25,6 @@ const TABS = [
   { key: "excel", title: "Excel" },
 ];
 
-const [pHover, setPHover] = useState(false);
-const [pDown, setPDown] = useState(false);
-const [pFocus, setPFocus] = useState(false);
-
-<button
-  style={{
-    ...btnPrimary(),
-    ...(pHover ? btnPrimaryHover() : null),
-    ...(pDown ? btnPrimaryActive() : null),
-    ...(pFocus ? btnFocusRingGold() : null),
-  }}
-  onMouseEnter={() => setPHover(true)}
-  onMouseLeave={() => { setPHover(false); setPDown(false); }}
-  onMouseDown={() => setPDown(true)}
-  onMouseUp={() => setPDown(false)}
-  onFocus={() => setPFocus(true)}
-  onBlur={() => setPFocus(false)}
->
-  Guardar
-</button>
 
 /* ----------------------------- LocalStorage ----------------------------- */
 
@@ -394,6 +374,12 @@ const authHeaders = async (forceRefresh = false) => {
 
 export default function AppPage() {
   const router = useRouter();
+
+  useEffect(() => {
+  return () => {
+    if (studioSaveTimeoutRef.current) clearTimeout(studioSaveTimeoutRef.current);
+  };
+}, []);
 
   // Auth
   const [user, setUser] = useState(null);
@@ -1757,6 +1743,11 @@ const studioSaveTimeoutRef = useRef(null);
     };
   }, [queryText, sortedProjects]);
 
+  function setTab(key) {
+  setActiveTab(key);
+  if (user?.uid) safeSetLS(lsKeyActiveTab(user.uid), key);
+}
+
   const jumpToSearchMessage = (r) => {
     setActiveProjectId(r.projectId);
     setTab(r.tab);
@@ -2275,6 +2266,7 @@ const studioSaveTimeoutRef = useRef(null);
                   const canvasDoc = activeDocEntry?.doc;
 
                   const setCanvasDoc = (nextDoc) => {
+                    if (!nextDoc) return;
   const nextStudio = {
     ...studioSafe,
     docs: (studioSafe.docs || []).map((d) =>
