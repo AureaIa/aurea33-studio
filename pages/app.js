@@ -25,6 +25,27 @@ const TABS = [
   { key: "excel", title: "Excel" },
 ];
 
+const [pHover, setPHover] = useState(false);
+const [pDown, setPDown] = useState(false);
+const [pFocus, setPFocus] = useState(false);
+
+<button
+  style={{
+    ...btnPrimary(),
+    ...(pHover ? btnPrimaryHover() : null),
+    ...(pDown ? btnPrimaryActive() : null),
+    ...(pFocus ? btnFocusRingGold() : null),
+  }}
+  onMouseEnter={() => setPHover(true)}
+  onMouseLeave={() => { setPHover(false); setPDown(false); }}
+  onMouseDown={() => setPDown(true)}
+  onMouseUp={() => setPDown(false)}
+  onFocus={() => setPFocus(true)}
+  onBlur={() => setPFocus(false)}
+>
+  Guardar
+</button>
+
 /* ----------------------------- LocalStorage ----------------------------- */
 
 function lsKey(uid) {
@@ -2908,6 +2929,29 @@ function topbar() {
   };
 }
 
+function logoCircle() {
+  return {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    display: "grid",
+    placeItems: "center",
+    fontWeight: 1000,
+    letterSpacing: 0.6,
+    border: "1px solid rgba(247,198,0,0.30)",
+    background: "rgba(247,198,0,0.10)",
+    boxShadow: "0 10px 26px rgba(0,0,0,0.18)",
+    color: "var(--gold)",
+    userSelect: "none",
+  };
+}
+
+// ✅ alias por si en algún lado quedó el typo:
+function logCircle() {
+  return logoCircle();
+}
+
+
 function chip() {
   return {
     display: "inline-flex",
@@ -3629,13 +3673,48 @@ function btnPrimary() {
   return {
     padding: "10px 12px",
     borderRadius: 14,
-    border: "1px solid rgba(247,198,0,0.30)",
-    background: "rgba(247,198,0,0.14)",
+    border: "1px solid rgba(247,198,0,0.42)",
+    background:
+      "linear-gradient(180deg, rgba(247,198,0,0.22) 0%, rgba(247,198,0,0.10) 100%)",
     color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
+    letterSpacing: "0.2px",
+    boxShadow:
+      "0 10px 30px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.10)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+    transition: "transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease",
+    userSelect: "none",
   };
 }
+function btnPrimaryHover() {
+  return {
+    transform: "translateY(-1px)",
+    border: "1px solid rgba(247,198,0,0.62)",
+    background:
+      "linear-gradient(180deg, rgba(247,198,0,0.30) 0%, rgba(247,198,0,0.14) 100%)",
+    boxShadow:
+      "0 14px 40px rgba(0,0,0,0.35), 0 0 0 3px rgba(247,198,0,0.10), inset 0 1px 0 rgba(255,255,255,0.12)",
+  };
+}
+
+function btnPrimaryActive() {
+  return {
+    transform: "translateY(0px) scale(0.99)",
+    boxShadow:
+      "0 8px 22px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.08)",
+  };
+}
+
+function btnFocusRingGold() {
+  return {
+    outline: "none",
+    boxShadow:
+      "0 0 0 3px rgba(247,198,0,0.18), 0 14px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)",
+  };
+}
+
 function btnDanger() {
   return {
     padding: "10px 12px",
