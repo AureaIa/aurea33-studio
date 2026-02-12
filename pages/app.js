@@ -5,9 +5,7 @@ import { useRouter } from "next/router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
 
-
 import { getAuthToken } from "../lib/getAuthToken";
-
 
 // ✅ Mantén tu Wizard (NO TOCO SU LÓGICA INTERNA)
 // 👇 Solo lo conecto por props: onSubmit / onGenerateExcel
@@ -15,12 +13,9 @@ import ExcelWizardBubbles from "../components/ExcelWizardBubbles";
 
 import dynamic from "next/dynamic";
 
-const CanvasEditorClient = dynamic(
-  () => import("../components/studio/CanvasEditor"),
-  { ssr: false }
-);
-
-
+const CanvasEditorClient = dynamic(() => import("../components/studio/CanvasEditor"), {
+  ssr: false,
+});
 
 const TABS = [
   { key: "chat", title: "Chat AUREA" },
@@ -29,8 +24,6 @@ const TABS = [
   { key: "studio", title: "AUREA STUDIO 🚀" },
   { key: "excel", title: "Excel" },
 ];
-
-
 
 /* ----------------------------- LocalStorage ----------------------------- */
 
@@ -43,6 +36,16 @@ function lsKeyActiveTab(uid) {
 }
 function lsKeySidebar(uid) {
   return `aurea33:v2:sidebarCollapsed:${uid || "anon"}`;
+}
+
+// ✅ SaaS Pro: persistencia inmediata del canvas por proyecto (refresh instantáneo)
+function studioDocKey(uid, projectId) {
+  return `aurea33:studioDoc:${uid || "anon"}:${projectId || "no_project"}`;
+}
+
+// ✅ SaaS Pro: índice local (mini-book) por usuario
+function studioIndexKey(uid) {
+  return `aurea33:studioIndex:${uid || "anon"}`;
 }
 
 function safeGetLS(key, fallback) {
@@ -62,6 +65,13 @@ function safeSetLS(key, value) {
   } catch {}
 }
 
+function safeJsonParse(str, fallback) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
+}
 
 function loadProjectsLS(uid) {
   if (!uid) return null;
@@ -115,18 +125,6 @@ function makeProject(title = "Nuevo proyecto") {
       },
     },
   };
-}
-
-function studioDocKey(uid) {
-  return `aurea33:studio:doc:${uid || "anon"}`;
-}
-
-function safeJsonParse(str, fallback) {
-  try {
-    return JSON.parse(str);
-  } catch {
-    return fallback;
-  }
 }
 
 /* ----------------------------- Utilities ----------------------------- */
@@ -231,11 +229,9 @@ function useIsMobile(breakpoint = 900) {
     if (typeof window === "undefined") return;
 
     const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
-
     const apply = () => setIsMobile(!!mq.matches);
     apply();
 
-    // compat Safari/old
     if (mq.addEventListener) mq.addEventListener("change", apply);
     else mq.addListener(apply);
 
@@ -247,6 +243,8 @@ function useIsMobile(breakpoint = 900) {
 
   return isMobile;
 }
+
+/* ----------------------------- Studio doc helpers ----------------------------- */
 
 function makeStudioDoc(title = "Doc 1") {
   const id = makeId();
@@ -321,13 +319,44 @@ function ensureStudioHasActiveDoc(studio) {
   };
 }
 
+// ✅ SaaS Pro: cargar/guardar doc por proyecto (refresh inmediato)
+function loadStudioDocLS(uid, projectId) {
+  if (typeof window === "undefined") return null;
+  const raw = safeGetLS(studioDocKey(uid, projectId), null);
+  return raw ? safeJsonParse(raw, null) : null;
+}
+function saveStudioDocLS(uid, projectId, doc) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(studioDocKey(uid, projectId), JSON.stringify(doc));
+  } catch {}
+}
 
-
-
-/* ----------------------------- App Page ----------------------------- */
+// ✅ SaaS Pro: índice local mini-book
+function loadStudioIndexLS(uid) {
+  if (typeof window === "undefined") return [];
+  const raw = safeGetLS(studioIndexKey(uid), "[]");
+  const arr = safeJsonParse(raw, []);
+  return Array.isArray(arr) ? arr : [];
+}
+function saveStudioIndexLS(uid, list) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(studioIndexKey(uid), JSON.stringify(list || []));
+  } catch {}
+}
+function upsertStudioIndexEntry(uid, entry) {
+  const prev = loadStudioIndexLS(uid);
+  const idx = prev.findIndex((x) => x.id === entry.id);
+  const next = [...prev];
+  if (idx >= 0) next[idx] = { ...next[idx], ...entry, updatedAt: uidNow() };
+  else next.unshift({ ...entry, createdAt: uidNow(), updatedAt: uidNow() });
+  // orden por updated desc
+  next.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  saveStudioIndexLS(uid, next.slice(0, 300));
+}
 
 /* ----------------------------- Auth Token (FIX definitivo) ----------------------------- */
-
 
 // ✅ Backward-compat: tu código usa getIdTokenForce() en muchos lados
 const getIdTokenForce = async () => {
@@ -342,7 +371,6 @@ const authHeaders = async (forceRefresh = false) => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-
 export default function AppPage() {
   const router = useRouter();
 
@@ -351,148 +379,120 @@ export default function AppPage() {
   const [authReady, setAuthReady] = useState(false);
 
   // UI
+  const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
-const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // 1) State
+  const [theme, setTheme] = useState("dark"); // "light" | "dark"
 
+  // 2) Load theme on mount (localStorage)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem("aurea33:theme");
+    if (saved === "light" || saved === "dark") setTheme(saved);
+  }, []);
 
-const STUDIO_TEMPLATES = [
-  { id: "fb_post", name: "Facebook Post", w: 1080, h: 1080, bg: "#0b1020" },
-  { id: "ig_post", name: "Instagram Post", w: 1080, h: 1080, bg: "#0b1020" },
-  { id: "story", name: "Story (IG/FB)", w: 1080, h: 1920, bg: "#0b1020" },
-  { id: "fb_cover", name: "Facebook Cover", w: 1640, h: 624, bg: "#0b1020" },
-  { id: "yt_thumb", name: "YouTube Thumbnail", w: 1280, h: 720, bg: "#0b1020" },
-];
+  // 3) Persist theme
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("aurea33:theme", theme);
+  }, [theme]);
 
+  // 4) Toggle helper
+  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
-// 1) State
-const [theme, setTheme] = useState("dark"); // "light" | "dark"
+  const mobileOverlay = () => ({
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.55)",
+    backdropFilter: "blur(6px)",
+    zIndex: 9998,
+  });
 
-// 2) Load theme on mount (localStorage)
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  const saved = localStorage.getItem("aurea33:theme");
-  if (saved === "light" || saved === "dark") setTheme(saved);
-}, []);
+  const mobileDrawer = (open) => ({
+    position: "fixed",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: "min(86vw, 380px)",
+    background: "rgba(10,12,18,0.92)",
+    borderRight: "1px solid rgba(255,255,255,0.08)",
+    boxShadow: "0 20px 80px rgba(0,0,0,0.55)",
+    zIndex: 9999,
+    transform: open ? "translateX(0)" : "translateX(-102%)",
+    transition: "transform 180ms ease-out",
+    display: "flex",
+    flexDirection: "column",
+  });
 
-// 3) Persist theme
-useEffect(() => {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("aurea33:theme", theme);
-}, [theme]);
+  const drawerHeader = () => ({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "12px 12px",
+    borderBottom: "1px solid rgba(255,255,255,0.08)",
+  });
 
-// 4) Toggle helper
-const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const drawerBody = () => ({
+    padding: 12,
+    overflow: "auto",
+    flex: 1,
+  });
 
-const mobileOverlay = () => ({
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.55)",
-  backdropFilter: "blur(6px)",
-  zIndex: 9998,
-});
+  // 5) Vars (CSS custom props)
+  const themeVars = useMemo(() => {
+    if (theme === "dark") {
+      return {
+        "--bg": "#0b0b0c",
+        "--panel": "rgba(255,255,255,0.03)",
+        "--panel2": "rgba(0,0,0,0.28)",
+        "--border": "rgba(255,255,255,0.08)",
+        "--text": "#ffffff",
+        "--muted": "rgba(255,255,255,0.72)",
+        "--gold": "#f7c600",
+        "--shadow": "0 18px 60px rgba(0,0,0,0.55)",
+        "--blur": "blur(10px)",
 
-const mobileDrawer = (open) => ({
-  position: "fixed",
-  top: 0,
-  left: 0,
-  bottom: 0,
-  width: "min(86vw, 380px)",
-  background: "rgba(10,12,18,0.92)",
-  borderRight: "1px solid rgba(255,255,255,0.08)",
-  boxShadow: "0 20px 80px rgba(0,0,0,0.55)",
-  zIndex: 9999,
-  transform: open ? "translateX(0)" : "translateX(-102%)",
-  transition: "transform 180ms ease-out",
-  display: "flex",
-  flexDirection: "column",
-});
+        // ✅ Surfaces unificados
+        "--surface-1": "rgba(255,255,255,0.04)",
+        "--surface-2": "rgba(0,0,0,0.22)",
+        "--surface-3": "rgba(0,0,0,0.35)",
+        "--stroke-soft": "rgba(255,255,255,0.10)",
+        "--stroke-hard": "rgba(255,255,255,0.16)",
+        "--shadow-soft": "0 10px 30px rgba(0,0,0,0.35)",
+        "--shadow-hard": "0 24px 90px rgba(0,0,0,0.55)",
+        "--blue": "rgba(47,107,255,0.92)",
+        "--blue-soft": "rgba(47,107,255,0.14)",
+        "--green-soft": "rgba(60,220,130,0.12)",
+        "--red-soft": "rgba(255,80,80,0.12)",
+      };
+    }
 
-
-const drawerHeader = () => ({
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  padding: "12px 12px",
-  borderBottom: "1px solid rgba(255,255,255,0.08)",
-});
-
-const drawerBody = () => ({
-  padding: 12,
-  overflow: "auto",
-  flex: 1,
-});
-
-
-// 5) Vars (CSS custom props)
-const themeVars = useMemo(() => {
-  if (theme === "dark") {
+    // 🌤 Light premium real (sin manchas negras)
     return {
-      "--bg": "#0b0b0c",
-      "--panel": "rgba(255,255,255,0.03)",
-      "--panel2": "rgba(0,0,0,0.28)",
-      "--border": "rgba(255,255,255,0.08)",
-      "--text": "#ffffff",
-      "--muted": "rgba(255,255,255,0.72)",
-      "--gold": "#f7c600",
-      "--shadow": "0 18px 60px rgba(0,0,0,0.55)",
+      "--bg": "#F4F5F7",
+      "--panel": "#FFFFFF",
+      "--panel2": "rgba(255,255,255,0.72)",
+      "--border": "rgba(15,23,42,0.12)",
+      "--text": "#0F172A",
+      "--muted": "rgba(15,23,42,0.65)",
+      "--gold": "#C9A227",
+      "--shadow": "0 18px 60px rgba(2,6,23,0.10)",
       "--blur": "blur(10px)",
 
-      // ✅ NUEVO: surfaces unificados
-      "--surface-1": "rgba(255,255,255,0.04)",  // cards suaves
-      "--surface-2": "rgba(0,0,0,0.22)",        // áreas internas
-      "--surface-3": "rgba(0,0,0,0.35)",        // fondos densos
-      "--stroke-soft": "rgba(255,255,255,0.10)",
-      "--stroke-hard": "rgba(255,255,255,0.16)",
-      "--shadow-soft": "0 10px 30px rgba(0,0,0,0.35)",
-      "--shadow-hard": "0 24px 90px rgba(0,0,0,0.55)",
-      "--blue": "rgba(47,107,255,0.92)",
-      "--blue-soft": "rgba(47,107,255,0.14)",
-      "--green-soft": "rgba(60,220,130,0.12)",
-      "--red-soft": "rgba(255,80,80,0.12)",
+      "--surface-1": "#FFFFFF",
+      "--surface-2": "rgba(15,23,42,0.03)",
+      "--surface-3": "rgba(15,23,42,0.06)",
+      "--stroke-soft": "rgba(15,23,42,0.10)",
+      "--stroke-hard": "rgba(15,23,42,0.14)",
+      "--shadow-soft": "0 10px 30px rgba(2,6,23,0.08)",
+      "--shadow-hard": "0 24px 90px rgba(2,6,23,0.12)",
+      "--blue": "rgba(47,107,255,0.88)",
+      "--blue-soft": "rgba(47,107,255,0.10)",
+      "--green-soft": "rgba(16,185,129,0.10)",
+      "--red-soft": "rgba(239,68,68,0.10)",
     };
-  }
-
-  // 🌤 Light premium real (sin manchas negras)
-  return {
-    "--bg": "#F4F5F7",
-    "--panel": "#FFFFFF",
-    "--panel2": "rgba(255,255,255,0.72)",
-    "--border": "rgba(15,23,42,0.12)",
-    "--text": "#0F172A",
-    "--muted": "rgba(15,23,42,0.65)",
-    "--gold": "#C9A227",
-    "--shadow": "0 18px 60px rgba(2,6,23,0.10)",
-    "--blur": "blur(10px)",
-
-    // ✅ NUEVO: surfaces unificados para light
-    "--surface-1": "#FFFFFF",
-    "--surface-2": "rgba(15,23,42,0.03)",
-    "--surface-3": "rgba(15,23,42,0.06)",
-    "--stroke-soft": "rgba(15,23,42,0.10)",
-    "--stroke-hard": "rgba(15,23,42,0.14)",
-    "--shadow-soft": "0 10px 30px rgba(2,6,23,0.08)",
-    "--shadow-hard": "0 24px 90px rgba(2,6,23,0.12)",
-    "--blue": "rgba(47,107,255,0.88)",
-    "--blue-soft": "rgba(47,107,255,0.10)",
-    "--green-soft": "rgba(16,185,129,0.10)",
-    "--red-soft": "rgba(239,68,68,0.10)",
-  };
-}, [theme]);
-
-
-
-// 6) Base styles helpers (opcional pero recomendado)
-const uiBase = useMemo(
-  () => ({
-    background: "var(--bg)",
-    color: "var(--text)",
-    minHeight: "100vh",
-  }),
-  []
-);
-
-
+  }, [theme]);
 
   // Projects (persist)
   const [projects, setProjects] = useState([]);
@@ -517,8 +517,8 @@ const uiBase = useMemo(
   const [searchOpen, setSearchOpen] = useState(false);
   const [queryText, setQueryText] = useState("");
 
-  // ✅ Mobile drawer sidebar (DECLARAR AQUÍ)
-const [sidebarOpen, setSidebarOpen] = useState(false);
+  // ✅ Mobile drawer sidebar
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Toasts
   const [toasts, setToasts] = useState([]);
@@ -537,61 +537,55 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
   // For MobileApp
   const isMobile = useIsMobile(980);
 
-// hydration guard (CLAVE)
-const [hydrated, setHydrated] = useState(false);
-useEffect(() => setHydrated(true), []);
+  // hydration guard (CLAVE)
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const safeIsMobile = hydrated ? isMobile : false;
 
-const safeIsMobile = hydrated ? isMobile : false;
+  useEffect(() => {
+    if (!safeIsMobile) {
+      setSidebarOpen(false);
+      document.body.style.overflow = "";
+      return;
+    }
 
-useEffect(() => {
-  if (!safeIsMobile) {
-    setSidebarOpen(false);
-    document.body.style.overflow = "";
-    return;
-  }
+    const onKey = (e) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
 
-  const onKey = (e) => {
-    if (e.key === "Escape") setSidebarOpen(false);
-  };
+    window.addEventListener("keydown", onKey);
 
-  window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    if (sidebarOpen) document.body.style.overflow = "hidden";
 
-  const prevOverflow = document.body.style.overflow;
-  if (sidebarOpen) document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [safeIsMobile, sidebarOpen]);
 
-  return () => {
-    window.removeEventListener("keydown", onKey);
-    document.body.style.overflow = prevOverflow;
-  };
-}, [safeIsMobile, sidebarOpen]);
+  // 7) No Scroll crop
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
 
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlHeight = html.style.height;
+    const prevBodyHeight = body.style.height;
 
-// 7) No Scroll crop por ECSS AUREA33
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.height = "100%";
+    body.style.height = "100%";
 
-
-useEffect(() => {
-  const html = document.documentElement;
-  const body = document.body;
-
-  const prevHtmlOverflow = html.style.overflow;
-  const prevBodyOverflow = body.style.overflow;
-  const prevHtmlHeight = html.style.height;
-  const prevBodyHeight = body.style.height;
-
-  html.style.overflow = "hidden";
-  body.style.overflow = "hidden";
-  html.style.height = "100%";
-  body.style.height = "100%";
-
-  return () => {
-    html.style.overflow = prevHtmlOverflow;
-    body.style.overflow = prevBodyOverflow;
-    html.style.height = prevHtmlHeight;
-    body.style.height = prevBodyHeight;
-  };
-}, []);
-
-
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      html.style.height = prevHtmlHeight;
+      body.style.height = prevBodyHeight;
+    };
+  }, []);
 
   /* ----------------------------- Toasts ----------------------------- */
   const toast = (title, detail = "", kind = "ok", ms = 2800) => {
@@ -606,30 +600,30 @@ useEffect(() => {
   };
 
   /* ----------------------------- Auth bootstrap ----------------------------- */
-useEffect(() => {
-  const unsub = onAuthStateChanged(auth, (u) => {
-    setUser(u || null);
-    setAuthReady(true);
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u || null);
+      setAuthReady(true);
 
-    if (!u) {
-      router.push("/login");
-      return;
-    }
+      if (!u) {
+        router.push("/login");
+        return;
+      }
 
-    // ✅ 1) Tab persistente
-    const savedTab = safeGetLS(lsKeyActiveTab(u.uid), null);
-    const allowed = new Set((TABS || []).map((t) => t.key));
-    const nextTab = savedTab && allowed.has(savedTab) ? savedTab : (TABS?.[0]?.key || "chat");
-    setActiveTab(nextTab);
+      // ✅ Tab persistente
+      const savedTab = safeGetLS(lsKeyActiveTab(u.uid), null);
+      const allowed = new Set((TABS || []).map((t) => t.key));
+      const nextTab =
+        savedTab && allowed.has(savedTab) ? savedTab : TABS?.[0]?.key || "chat";
+      setActiveTab(nextTab);
 
-    // ✅ 2) Sidebar collapsed persistente
-    const savedCollapsed = safeGetLS(lsKeySidebar(u.uid), null);
-    if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "1");
-  });
+      // ✅ Sidebar collapsed persistente
+      const savedCollapsed = safeGetLS(lsKeySidebar(u.uid), null);
+      if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "1");
+    });
 
-  return () => unsub();
-}, [router]);
-
+    return () => unsub();
+  }, [router]);
 
   /* ----------------------------- Projects load/save ----------------------------- */
   useEffect(() => {
@@ -638,36 +632,29 @@ useEffect(() => {
 
     const data = loadProjectsLS(user.uid);
 
-if (data?.projects?.length) {
-  const patched = data.projects.map((p) => {
-    const tabs = { ...(p.tabs || {}) };
+    if (data?.projects?.length) {
+      const patched = data.projects.map((p) => {
+        const tabs = { ...(p.tabs || {}) };
 
-    // 🔒 INYECTAR STUDIO SI NO EXISTE (proyectos viejos)
-    if (!tabs.studio) {
-      tabs.studio = {
-        meta: {
-          activeDocId: null,
-          lastTemplate: null,
-        },
-        docs: [],
-      };
+        // 🔒 INYECTAR STUDIO SI NO EXISTE (proyectos viejos)
+        if (!tabs.studio) {
+          tabs.studio = {
+            meta: { activeDocId: null, lastTemplate: null },
+            docs: [],
+          };
+        }
+
+        return { ...p, tabs };
+      });
+
+      setProjects(patched);
+      setActiveProjectId(data.activeProjectId || patched[0]?.id || null);
+    } else {
+      const seed = [makeProject("gato astronauta"), makeProject("Genera una persona animada...")];
+      setProjects(seed);
+      setActiveProjectId(seed[0]?.id);
+      saveProjectsLS(user.uid, { projects: seed, activeProjectId: seed[0]?.id });
     }
-
-    return { ...p, tabs };
-  });
-
-  setProjects(patched);
-  setActiveProjectId(data.activeProjectId || patched[0]?.id || null);
-} else {
-  const seed = [
-    makeProject("gato astronauta"),
-    makeProject("Genera una persona animada..."),
-  ];
-  setProjects(seed);
-  setActiveProjectId(seed[0]?.id);
-  saveProjectsLS(user.uid, { projects: seed, activeProjectId: seed[0]?.id });
-}
-
   }, [authReady, user?.uid]);
 
   useEffect(() => {
@@ -683,38 +670,34 @@ if (data?.projects?.length) {
   }, [projects, activeProjectId]);
 
   const activeTabMessages = useMemo(() => {
-  if (!activeProject) return [];
-  if (activeTab === "chat") return activeProject.tabs?.chat?.messages || [];
-  if (activeTab === "images") return activeProject.tabs?.images?.messages || [];
-  if (activeTab === "code") return activeProject.tabs?.code?.messages || [];
-  // ✅ Studio y Excel no se tratan como messages aquí
-  return [];
-}, [activeProject, activeTab]);
-
+    if (!activeProject) return [];
+    if (activeTab === "chat") return activeProject.tabs?.chat?.messages || [];
+    if (activeTab === "images") return activeProject.tabs?.images?.messages || [];
+    if (activeTab === "code") return activeProject.tabs?.code?.messages || [];
+    return [];
+  }, [activeProject, activeTab]);
 
   const totalMessages = useMemo(() => {
-  const p = activeProject;
-  if (!p?.tabs) return 0;
-  const c = p.tabs.chat?.messages?.length || 0;
-  const i = p.tabs.images?.messages?.length || 0;
-  const k = p.tabs.code?.messages?.length || 0;
-  const s = p.tabs.studio?.docs?.length || 0;
-  return c + i + k + s;
-}, [activeProject]);
-
+    const p = activeProject;
+    if (!p?.tabs) return 0;
+    const c = p.tabs.chat?.messages?.length || 0;
+    const i = p.tabs.images?.messages?.length || 0;
+    const k = p.tabs.code?.messages?.length || 0;
+    const s = p.tabs.studio?.docs?.length || 0;
+    return c + i + k + s;
+  }, [activeProject]);
 
   const totalWords = useMemo(() => {
-  const p = activeProject;
-  if (!p?.tabs) return 0;
-  const all = [
-    ...(p.tabs.chat?.messages || []),
-    ...(p.tabs.images?.messages || []),
-    ...(p.tabs.code?.messages || []),
-  ];
-  const txt = all.map((m) => m.text || "").join(" ");
-  return txt.trim() ? txt.trim().split(/\s+/).length : 0;
-}, [activeProject]);
-
+    const p = activeProject;
+    if (!p?.tabs) return 0;
+    const all = [
+      ...(p.tabs.chat?.messages || []),
+      ...(p.tabs.images?.messages || []),
+      ...(p.tabs.code?.messages || []),
+    ];
+    const txt = all.map((m) => m.text || "").join(" ");
+    return txt.trim() ? txt.trim().split(/\s+/).length : 0;
+  }, [activeProject]);
 
   const sortedProjects = useMemo(() => {
     const arr = [...(projects || [])];
@@ -738,16 +721,14 @@ if (data?.projects?.length) {
     });
   };
 
-// ✅ Guardado normal por TAB (mismo patrón que chat/code/excel)
-// Uso: updateProjectTab("studio", nextStudio)
-const updateProjectTab = (tabKey, nextTabValue) => {
-  updateActiveProject((p) => {
-    const tabs = { ...(p.tabs || {}) };
-    tabs[tabKey] = nextTabValue;
-    return { ...p, tabs };
-  });
-};
-
+  // ✅ Guardado normal por TAB
+  const updateProjectTab = (tabKey, nextTabValue) => {
+    updateActiveProject((p) => {
+      const tabs = { ...(p.tabs || {}) };
+      tabs[tabKey] = nextTabValue;
+      return { ...p, tabs };
+    });
+  };
 
   const pushMsg = (tabKey, msg) => {
     updateActiveProject((p) => {
@@ -769,25 +750,47 @@ const updateProjectTab = (tabKey, nextTabValue) => {
   };
 
   // ✅ Ensure Studio tab has an active doc (solo cuando entras a Studio)
-useEffect(() => {
-  if (!activeProjectId) return;
-  if (activeTab !== "studio") return;
-  if (!activeProject) return;
+  useEffect(() => {
+    if (!activeProjectId) return;
+    if (activeTab !== "studio") return;
+    if (!activeProject) return;
 
-  const studioRaw = activeProject?.tabs?.studio;
-  const studioSafe = ensureStudioHasActiveDoc(studioRaw);
+    const studioRaw = activeProject?.tabs?.studio;
+    const studioSafe = ensureStudioHasActiveDoc(studioRaw);
 
-  // Solo actualiza si realmente cambió (inyecta doc inicial o corrige activeDocId)
-  const changed =
-    JSON.stringify(studioRaw || null) !== JSON.stringify(studioSafe || null);
+    const changed = JSON.stringify(studioRaw || null) !== JSON.stringify(studioSafe || null);
+    if (changed) updateProjectTab("studio", studioSafe);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, activeTab, activeProject]);
 
-  if (changed) {
-    updateProjectTab("studio", studioSafe);
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeProjectId, activeTab, activeProject]);
+  // ✅ SaaS Pro: al cambiar de proyecto, si existe doc guardado por proyecto, injéctalo como doc activo
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (!activeProjectId) return;
+    if (!activeProject) return;
 
+    const studioRaw = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+    const activeDocEntry = (studioRaw.docs || []).find((d) => d.id === studioRaw.meta.activeDocId);
+    const currentDoc = activeDocEntry?.doc || null;
 
+    const savedDoc = loadStudioDocLS(user.uid, activeProjectId);
+    if (!savedDoc) return;
+
+    // si el doc guardado es diferente, lo aplicamos al doc activo
+    const different =
+      JSON.stringify(savedDoc || null) !== JSON.stringify(currentDoc || null);
+
+    if (different && studioRaw.meta?.activeDocId) {
+      const nextStudio = {
+        ...studioRaw,
+        docs: (studioRaw.docs || []).map((d) =>
+          d.id === studioRaw.meta.activeDocId ? { ...d, updatedAt: uidNow(), doc: savedDoc } : d
+        ),
+      };
+      updateProjectTab("studio", nextStudio);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, activeProjectId]);
 
   /* ----------------------------- Pin message ----------------------------- */
   const toggleMessagePin = (tabKey, msgId) => {
@@ -804,38 +807,31 @@ useEffect(() => {
   };
 
   const pinnedMessagesForTab = useMemo(() => {
-  const p = activeProject;
-  if (!p?.tabs) return [];
+    const p = activeProject;
+    if (!p?.tabs) return [];
 
-  const msgs =
-    activeTab === "chat"
-      ? p.tabs.chat?.messages || []
-      : activeTab === "images"
-      ? p.tabs.images?.messages || []
-      : activeTab === "code"
-      ? p.tabs.code?.messages || []
-      : [];
+    const msgs =
+      activeTab === "chat"
+        ? p.tabs.chat?.messages || []
+        : activeTab === "images"
+        ? p.tabs.images?.messages || []
+        : activeTab === "code"
+        ? p.tabs.code?.messages || []
+        : [];
 
-  return msgs.filter((m) => m.pinned);
-}, [activeProject, activeTab]);
-
+    return msgs.filter((m) => m.pinned);
+  }, [activeProject, activeTab]);
 
   const scrollToMessage = (msgId) => {
     const el = document.getElementById(`msg-${msgId}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-
-  
-// ✅ Header user label (fix: headerUser undefined)
-const headerUser = useMemo(() => {
-  if (!user) return "GUEST";
-  return (
-    user.displayName ||
-    user.email ||
-    (user.uid ? `UID:${String(user.uid).slice(0, 6)}…` : "USER")
-  );
-}, [user]);
+  // ✅ Header user label
+  const headerUser = useMemo(() => {
+    if (!user) return "GUEST";
+    return user.displayName || user.email || (user.uid ? `UID:${String(user.uid).slice(0, 6)}…` : "USER");
+  }, [user]);
 
   /* ----------------------------- Export conversation ----------------------------- */
   const exportConversationTxt = (tabKey) => {
@@ -882,9 +878,7 @@ const headerUser = useMemo(() => {
 
     const html = `
       <h1>${escapeHtml(p.title)} — ${escapeHtml(tabKey.toUpperCase())}</h1>
-      <div class="meta">User: ${escapeHtml(headerUser)} • Export: ${escapeHtml(
-      new Date().toLocaleString()
-    )}</div>
+      <div class="meta">User: ${escapeHtml(headerUser)} • Export: ${escapeHtml(new Date().toLocaleString())}</div>
       ${htmlMsgs}
     `;
 
@@ -893,14 +887,13 @@ const headerUser = useMemo(() => {
   };
 
   const onLogout = async () => {
-  try {
-    await signOut(auth);
-    router.push("/login");
-  } catch (e) {
-    console.error(e);
-  }
-};
-
+    try {
+      await signOut(auth);
+      router.push("/login");
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   /* ----------------------------- AutoScroll ----------------------------- */
   const scrollToBottom = (ref) => {
@@ -940,62 +933,61 @@ const headerUser = useMemo(() => {
      ======================================================================================= */
 
   async function createImageJob({ prompt, n = 1, size = "1024x1024" }) {
-  const r = await fetch("/api/images/create-job", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders(true)),
-    },
-    body: JSON.stringify({ prompt, n, size }),
-  });
-
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error || "create-job failed");
-
-  const jobId =
-    data?.jobId ??
-    data?.id ??
-    data?.job?.id ??
-    data?.job?.jobId ??
-    data?.data?.jobId ??
-    null;
-
-  return { jobId, raw: data };
-}
-
-async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
-  const start = Date.now();
-  let lastStatus = "";
-
-  while (Date.now() - start < maxMs) {
-    if (signal?.aborted) throw new Error("Aborted");
-
-    const url = `/api/images/get-job?jobId=${encodeURIComponent(jobId)}`;
-
-    const r = await fetch(url, {
-      method: "GET",
-      headers: { ...(await authHeaders(false)) },
-      signal,
+    const r = await fetch("/api/images/create-job", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await authHeaders(true)),
+      },
+      body: JSON.stringify({ prompt, n, size }),
     });
 
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data?.error || `get-job failed (${r.status})`);
+    if (!r.ok) throw new Error(data?.error || "create-job failed");
 
-    const status = data?.status || data?.state || data?.job?.status || "";
-    const imageUrl = data?.imageUrl || data?.url || data?.output?.[0]?.url || data?.job?.imageUrl;
+    const jobId =
+      data?.jobId ??
+      data?.id ??
+      data?.job?.id ??
+      data?.job?.jobId ??
+      data?.data?.jobId ??
+      null;
 
-    if (status && status !== lastStatus) {
-      lastStatus = status;
-      setGenStatus(`Estado: ${status}`);
-    }
-
-    if (imageUrl) return { ...data, imageUrl };
-    await new Promise((res) => setTimeout(res, 800));
+    return { jobId, raw: data };
   }
 
-  throw new Error("Timeout waiting for image");
-}
+  async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
+    const start = Date.now();
+    let lastStatus = "";
 
+    while (Date.now() - start < maxMs) {
+      if (signal?.aborted) throw new Error("Aborted");
+
+      const url = `/api/images/get-job?jobId=${encodeURIComponent(jobId)}`;
+
+      const r = await fetch(url, {
+        method: "GET",
+        headers: { ...(await authHeaders(false)) },
+        signal,
+      });
+
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || `get-job failed (${r.status})`);
+
+      const status = data?.status || data?.state || data?.job?.status || "";
+      const imageUrl = data?.imageUrl || data?.url || data?.output?.[0]?.url || data?.job?.imageUrl;
+
+      if (status && status !== lastStatus) {
+        lastStatus = status;
+        setGenStatus(`Estado: ${status}`);
+      }
+
+      if (imageUrl) return { ...data, imageUrl };
+      await new Promise((res) => setTimeout(res, 800));
+    }
+
+    throw new Error("Timeout waiting for image");
+  }
 
   function normalizeJobId(created) {
     const jobId =
@@ -1065,527 +1057,435 @@ async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
     }
   }
 
-
- 
   /* ----------------------------- Chat ----------------------------- */
-// ✅ Asegúrate de importar getAuthToken desde donde lo tengas
-// Ejemplo:
-// import { getAuthToken } from "../lib/authToken";
+  async function sendChat() {
+    const text = (chatInput || "").trim();
+    if (!text || busy || !activeProject) return;
 
-async function sendChat() {
-  const text = (chatInput || "").trim();
-  if (!text || busy || !activeProject) return;
+    setChatInput("");
+    setBusy(true);
+    pushMsg("chat", { role: "user", text });
 
-  setChatInput("");
-  setBusy(true);
-  pushMsg("chat", { role: "user", text });
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
 
-  // Cancelar request anterior si existe
-  if (abortRef.current) abortRef.current.abort();
-  const ac = new AbortController();
-  abortRef.current = ac;
+    try {
+      const token = await getAuthToken().catch(() => null);
+      let assistantText = "";
 
-  try {
-    // ✅ Token (NO revienta si no hay login)
-    const token = await getAuthToken().catch(() => null);
+      const r = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          message: text,
+          projectId: activeProjectId,
+        }),
+        signal: ac.signal,
+      }).catch(() => null);
 
-    let assistantText = "";
-
-    const r = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        message: text,
-        projectId: activeProjectId,
-      }),
-      signal: ac.signal,
-    }).catch(() => null);
-
-    if (r && r.ok) {
-      const data = await r.json().catch(() => ({}));
-      assistantText = data?.text || data?.message || "";
-    } else if (r && !r.ok) {
-      const data = await r.json().catch(() => ({}));
-      const extra =
-        r.status === 401 || r.status === 403
-          ? " (token inválido o sesión expirada)"
-          : "";
-      assistantText = `⚠️ /api/chat error ${r.status}${extra}: ${
-        data?.error || "Unknown"
-      }`;
-    }
-
-    if (!assistantText) assistantText = "💬 Chat AUREA listo.";
-
-    pushMsg("chat", { role: "assistant", text: assistantText });
-  } catch (e) {
-    // Si abortaste manualmente, no lo trates como error real
-    if (e?.name === "AbortError") {
-      pushMsg("chat", { role: "assistant", text: "⏹️ Chat cancelado." });
-      return;
-    }
-
-    const msg = e?.message || "Error en chat";
-    pushMsg("chat", { role: "assistant", text: `⚠️ Chat error: ${msg}` });
-    toast("Chat error", msg, "error", 4200);
-  } finally {
-    setBusy(false);
-  }
-}
-
- /* ----------------------------- Code ----------------------------- */
-
-async function sendCode() {
-  const text = (codeInput || "").trim();
-  if (!text || busy || !activeProject) return;
-
-  setCodeInput("");
-  setBusy(true);
-  pushMsg("code", { role: "user", text });
-
-  if (abortRef.current) abortRef.current.abort();
-  const ac = new AbortController();
-  abortRef.current = ac;
-
-  try {
-    // ✅ Token unificado (NO revienta si no hay sesión)
-    const token = await getAuthToken().catch(() => null);
-
-    let assistantText = "";
-    const r = await fetch("/api/code", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ prompt: text, projectId: activeProjectId }),
-      signal: ac.signal,
-    }).catch(() => null);
-
-    if (r && r.ok) {
-      const data = await r.json().catch(() => ({}));
-      assistantText = data?.text || data?.message || "";
-    } else if (r && !r.ok) {
-      const data = await r.json().catch(() => ({}));
-      const extra =
-        r.status === 401 || r.status === 403
-          ? " (token inválido o sesión expirada)"
-          : "";
-      assistantText = `⚠️ /api/code error ${r.status}${extra}: ${
-        data?.error || "Unknown"
-      }`;
-    }
-
-    if (!assistantText) assistantText = "🧠 Modo Código listo.";
-
-    pushMsg("code", { role: "assistant", text: assistantText });
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      pushMsg("code", { role: "assistant", text: "⏹️ Código cancelado." });
-      return;
-    }
-    const msg = e?.message || "Error en código";
-    pushMsg("code", { role: "assistant", text: `⚠️ Código error: ${msg}` });
-    toast("Code error", msg, "error", 4200);
-  } finally {
-    setBusy(false);
-  }
-}
-
-
- /* =======================================================================================
-   ✅✅✅ EXCEL: CONEXIÓN REAL (WIZARD -> NEXT API -> DOWNLOAD) ✅✅✅
-   (NO TOCO IMAGES)
-   ======================================================================================= */
-
-// ✅ CAMBIO CLAVE: ya NO pegamos a 8081 (Flask). Ahora es Next API route.
-const EXCEL_ENDPOINT = "/api/excel";
-
-const setExcelMeta = (patch) => {
-  updateActiveProject((p) => {
-    const tabs = { ...(p.tabs || {}) };
-    const excel = { ...(tabs.excel || {}) };
-    const meta = { ...(excel.meta || {}) };
-    excel.meta = { ...meta, ...patch };
-    tabs.excel = excel;
-    return { ...p, tabs };
-  });
-};
-
-/* ----------------------------- Excel helpers ----------------------------- */
-
-// Excel column letter from columns[] + key
-function colLetter(columns, key) {
-  const idx = columns.findIndex((c) => c.key === key);
-  if (idx < 0) return "C";
-  const n = idx + 1;
-  let s = "";
-  let x = n;
-  while (x > 0) {
-    const r = (x - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    x = Math.floor((x - 1) / 26);
-  }
-  return s;
-}
-
-// ✅ KPIs dashboard refs reales (Option A: label arriba, valor abajo)
-// KPI#0 -> B3, KPI#1 -> B5, KPI#2 -> B7, ... (saltos de 2 filas)
-function kpiCellRefByIndex(i, valueCol = "B", firstValueRow = 3) {
-  const row = firstValueRow + i * 2;
-  return `Dashboard!$${valueCol}$${row}`;
-}
-
-function buildExampleRows(columns) {
-  const base = {};
-  columns.forEach((c) => {
-    if (c.type === "date") base[c.key] = new Date().toISOString().slice(0, 10);
-    else if (c.type === "currency")
-      base[c.key] = Math.floor(1000 + Math.random() * 5000);
-    else if (c.key === "estatus") base[c.key] = "Pendiente";
-    else if (c.key === "banco") base[c.key] = "Caja";
-    else if (c.key === "categoria") base[c.key] = "General";
-    else if (c.key === "pago") base[c.key] = "Transferencia";
-    else base[c.key] = "Ejemplo";
-  });
-  return [base];
-}
-
-/* ------------------------ Wizard payload -> spec ------------------------ */
-
-const wizardPayloadToSpec = (payload) => {
-  const fileName = payload?.file?.fileName || "AUREA_excel.xlsx";
-  const sheetName = payload?.file?.sheetName || "Data";
-
-  const purpose = (payload?.wizard?.purpose || "").toLowerCase();
-  const controlType = (
-    payload?.context?.controlType ||
-    payload?.context?.control ||
-    payload?.context?.type ||
-    ""
-  ).toLowerCase();
-  const totals = (payload?.context?.totals_auto || payload?.context?.totals || "").toLowerCase();
-  const dashboardTxt = String(payload?.context?.dashboard || "").toLowerCase();
-
-  const wantsDashboard =
-    dashboardTxt.includes("sí") ||
-    dashboardTxt.includes("si") ||
-    dashboardTxt.includes("recomend");
-
-  const wantsRowColTotals = totals.includes("fila") || totals.includes("columna");
-  const wantsCharts = !!payload?.preferences?.wantCharts;
-
-  // 🎯 columnas base (Ingresos/Egresos)
-  let columns = [
-    { header: "Fecha", key: "fecha", type: "date", width: 14 },
-    { header: "Concepto", key: "concepto", type: "text", width: 36 },
-    { header: "Categoría", key: "categoria", type: "text", width: 20 },
-    { header: "Forma de pago", key: "pago", type: "text", width: 16 },
-    { header: "Ingreso", key: "ingreso", type: "currency", width: 14 },
-    { header: "Egreso", key: "egreso", type: "currency", width: 14 },
-  ];
-
-  // ✅ Cuentas por cobrar/pagar
-  const isCuentas =
-    controlType.includes("cuentas") ||
-    purpose.includes("cobrar") ||
-    purpose.includes("pagar");
-
-  if (isCuentas) {
-    columns = [
-      { header: "Fecha", key: "fecha", type: "date", width: 14 },
-      { header: "Cliente/Proveedor", key: "tercero", type: "text", width: 26 },
-      { header: "Concepto", key: "concepto", type: "text", width: 26 },
-      { header: "Vence", key: "vence", type: "date", width: 14 },
-      { header: "Estatus", key: "estatus", type: "text", width: 14 },
-      { header: "Monto", key: "monto", type: "currency", width: 14 },
-      { header: "Abono", key: "abono", type: "currency", width: 14 },
-      { header: "Saldo", key: "saldo", type: "currency", width: 14 },
-    ];
-  }
-
-  // ✅ Flujo de efectivo
-  const isFlujo = controlType.includes("flujo") || purpose.includes("efectivo");
-  if (isFlujo) {
-    columns = [
-      { header: "Fecha", key: "fecha", type: "date", width: 14 },
-      { header: "Movimiento", key: "mov", type: "text", width: 34 },
-      { header: "Banco/Caja", key: "banco", type: "text", width: 18 },
-      { header: "Entrada", key: "entrada", type: "currency", width: 14 },
-      { header: "Salida", key: "salida", type: "currency", width: 14 },
-      { header: "Saldo", key: "saldo", type: "currency", width: 14 },
-      { header: "Notas", key: "notas", type: "text", width: 22 },
-    ];
-  }
-
-  const notes = {
-    purpose: payload?.wizard?.purpose || "",
-    level: payload?.wizard?.level || "",
-    periodicity: payload?.wizard?.periodicity || "",
-    industry: payload?.wizard?.industry || "",
-    theme: payload?.preferences?.theme || "",
-    wantCharts: !!payload?.preferences?.wantCharts,
-    wantImages: !!payload?.preferences?.wantImages,
-    context: payload?.context || {},
-    uiOption: "A", // ✅ dashboard KPI sin merges (label arriba, valor abajo)
-    totalsMode: wantsRowColTotals ? "row_col" : "general",
-  };
-
-  const sheets = [
-    {
-      name: sheetName || "Data",
-      kind: "data",
-      style: {
-        header: { bold: true, freeze: true },
-        zebra: true,
-      },
-      data: {
-        columns,
-        exampleRows: buildExampleRows(columns),
-        totals: wantsRowColTotals
-          ? {
-              mode: "row_col",
-              currencyCols: columns.filter((c) => c.type === "currency").map((c) => c.key),
-            }
-          : { mode: "general" },
-      },
-    },
-  ];
-
-  // ✅ KPIs deterministas, SIN KPI("..."), adaptados por tipo de hoja
-  const kpis = [];
-
-  if (isFlujo) {
-    const L_in = colLetter(columns, "entrada");
-    const L_out = colLetter(columns, "salida");
-    kpis.push({
-      label: "Entradas",
-      formula: `=SUM(${sheetName}!${L_in}:${L_in})`,
-      format: "currency",
-    });
-    kpis.push({
-      label: "Salidas",
-      formula: `=SUM(${sheetName}!${L_out}:${L_out})`,
-      format: "currency",
-    });
-    // Balance = KPI0 - KPI1, refs reales Dashboard
-    kpis.push({
-      label: "Balance",
-      formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`,
-      format: "currency",
-    });
-    kpis.push({
-      label: "Saldo total",
-      formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`,
-      format: "currency",
-    });
-  } else if (isCuentas) {
-    kpis.push({
-      label: "Monto total",
-      formula: `=SUM(${sheetName}!${colLetter(columns, "monto")}:${colLetter(columns, "monto")})`,
-      format: "currency",
-    });
-    kpis.push({
-      label: "Abonos",
-      formula: `=SUM(${sheetName}!${colLetter(columns, "abono")}:${colLetter(columns, "abono")})`,
-      format: "currency",
-    });
-    kpis.push({
-      label: "Saldo total",
-      formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`,
-      format: "currency",
-    });
-    // Por si quieres “pendientes” numérico: COUNTIF en estatus
-    kpis.push({
-      label: "Pendientes",
-      formula: `=COUNTIF(${sheetName}!${colLetter(columns, "estatus")}:${colLetter(columns, "estatus")},"Pendiente")`,
-      format: "number",
-    });
-  } else {
-    // default Ingresos/Egresos
-    const L_in = colLetter(columns, "ingreso");
-    const L_out = colLetter(columns, "egreso");
-    kpis.push({
-      label: "Ingresos",
-      formula: `=SUM(${sheetName}!${L_in}:${L_in})`,
-      format: "currency",
-    });
-    kpis.push({
-      label: "Egresos",
-      formula: `=SUM(${sheetName}!${L_out}:${L_out})`,
-      format: "currency",
-    });
-    kpis.push({
-      label: "Balance",
-      formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`,
-      format: "currency",
-    });
-  }
-
-  if (wantsDashboard) {
-    sheets.push({
-      name: "Dashboard",
-      kind: "dashboard",
-      layout: {
-        option: "A",
-        kpiCard: { merge: false, labelTop: true },
-        spacing: "comfortable",
-      },
-      charts: wantsCharts ? [{ type: "bar", title: "Resumen", from: sheetName }] : [],
-      kpis,
-    });
-  }
-
-  return {
-    version: "1.1",
-    workbook: {
-      theme: "dark-gold",
-      title: fileName.replace(/\.xlsx$/i, ""),
-    },
-    sheets,
-    kpis,
-    notes,
-  };
-};
-
-/* --------------------------- Generate from wizard --------------------------- */
-
-async function generateExcelFromWizard(payload) {
-  if (!payload) throw new Error("No payload recibido del wizard");
-  if (!activeProject) throw new Error("No hay proyecto activo");
-
-  const fileName = payload?.file?.fileName || "AUREA_excel.xlsx";
-  const spec = wizardPayloadToSpec(payload);
-
-  setExcelMeta({
-    lastSpec: spec,
-    lastFileName: fileName,
-    lastError: null,
-  });
-
-  if (abortRef.current) abortRef.current.abort();
-  const ac = new AbortController();
-  abortRef.current = ac;
-
-  setBusy(true);
-  setGenStatus("🧾 Generando Excel...");
-
-  try {
-    // ✅ token opcional (si tu /api/excel lo usa)
-    const token = await getAuthToken().catch(() => null);
-
-    const r = await fetch(EXCEL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        mode: "generate",
-        engine: "exceljs",
-        fileName,
-        spec,
-        wizard: payload?.wizard || null,
-        preferences: payload?.preferences || null,
-        context: payload?.context || null,
-        file: payload?.file || null,
-      }),
-      signal: ac.signal,
-    });
-
-    if (!r.ok) {
-      // intenta json -> text
-      let errMsg = "";
-      const ct = r.headers.get("content-type") || "";
-      if (ct.includes("application/json")) {
-        const j = await r.json().catch(() => ({}));
-        errMsg = j?.error || j?.message || "";
-      } else {
-        errMsg = await r.text().catch(() => "");
+      if (r && r.ok) {
+        const data = await r.json().catch(() => ({}));
+        assistantText = data?.text || data?.message || "";
+      } else if (r && !r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const extra = r.status === 401 || r.status === 403 ? " (token inválido o sesión expirada)" : "";
+        assistantText = `⚠️ /api/chat error ${r.status}${extra}: ${data?.error || "Unknown"}`;
       }
-      throw new Error(errMsg || `HTTP ${r.status}`);
+
+      if (!assistantText) assistantText = "💬 Chat AUREA listo.";
+      pushMsg("chat", { role: "assistant", text: assistantText });
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        pushMsg("chat", { role: "assistant", text: "⏹️ Chat cancelado." });
+        return;
+      }
+      const msg = e?.message || "Error en chat";
+      pushMsg("chat", { role: "assistant", text: `⚠️ Chat error: ${msg}` });
+      toast("Chat error", msg, "error", 4200);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* ----------------------------- Code ----------------------------- */
+  async function sendCode() {
+    const text = (codeInput || "").trim();
+    if (!text || busy || !activeProject) return;
+
+    setCodeInput("");
+    setBusy(true);
+    pushMsg("code", { role: "user", text });
+
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    try {
+      const token = await getAuthToken().catch(() => null);
+      let assistantText = "";
+
+      const r = await fetch("/api/code", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ prompt: text, projectId: activeProjectId }),
+        signal: ac.signal,
+      }).catch(() => null);
+
+      if (r && r.ok) {
+        const data = await r.json().catch(() => ({}));
+        assistantText = data?.text || data?.message || "";
+      } else if (r && !r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const extra = r.status === 401 || r.status === 403 ? " (token inválido o sesión expirada)" : "";
+        assistantText = `⚠️ /api/code error ${r.status}${extra}: ${data?.error || "Unknown"}`;
+      }
+
+      if (!assistantText) assistantText = "🧠 Modo Código listo.";
+      pushMsg("code", { role: "assistant", text: assistantText });
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        pushMsg("code", { role: "assistant", text: "⏹️ Código cancelado." });
+        return;
+      }
+      const msg = e?.message || "Error en código";
+      pushMsg("code", { role: "assistant", text: `⚠️ Código error: ${msg}` });
+      toast("Code error", msg, "error", 4200);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* =======================================================================================
+     ✅✅✅ EXCEL: CONEXIÓN REAL (WIZARD -> NEXT API -> DOWNLOAD) ✅✅✅
+     ======================================================================================= */
+
+  const EXCEL_ENDPOINT = "/api/excel";
+
+  const setExcelMeta = (patch) => {
+    updateActiveProject((p) => {
+      const tabs = { ...(p.tabs || {}) };
+      const excel = { ...(tabs.excel || {}) };
+      const meta = { ...(excel.meta || {}) };
+      excel.meta = { ...meta, ...patch };
+      tabs.excel = excel;
+      return { ...p, tabs };
+    });
+  };
+
+  function colLetter(columns, key) {
+    const idx = columns.findIndex((c) => c.key === key);
+    if (idx < 0) return "C";
+    const n = idx + 1;
+    let s = "";
+    let x = n;
+    while (x > 0) {
+      const r = (x - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      x = Math.floor((x - 1) / 26);
+    }
+    return s;
+  }
+
+  function kpiCellRefByIndex(i, valueCol = "B", firstValueRow = 3) {
+    const row = firstValueRow + i * 2;
+    return `Dashboard!$${valueCol}$${row}`;
+  }
+
+  function buildExampleRows(columns) {
+    const base = {};
+    columns.forEach((c) => {
+      if (c.type === "date") base[c.key] = new Date().toISOString().slice(0, 10);
+      else if (c.type === "currency") base[c.key] = Math.floor(1000 + Math.random() * 5000);
+      else if (c.key === "estatus") base[c.key] = "Pendiente";
+      else if (c.key === "banco") base[c.key] = "Caja";
+      else if (c.key === "categoria") base[c.key] = "General";
+      else if (c.key === "pago") base[c.key] = "Transferencia";
+      else base[c.key] = "Ejemplo";
+    });
+    return [base];
+  }
+
+  const wizardPayloadToSpec = (payload) => {
+    const fileName = payload?.file?.fileName || "AUREA_excel.xlsx";
+    const sheetName = payload?.file?.sheetName || "Data";
+
+    const purpose = (payload?.wizard?.purpose || "").toLowerCase();
+    const controlType = (
+      payload?.context?.controlType ||
+      payload?.context?.control ||
+      payload?.context?.type ||
+      ""
+    ).toLowerCase();
+    const totals = (payload?.context?.totals_auto || payload?.context?.totals || "").toLowerCase();
+    const dashboardTxt = String(payload?.context?.dashboard || "").toLowerCase();
+
+    const wantsDashboard =
+      dashboardTxt.includes("sí") || dashboardTxt.includes("si") || dashboardTxt.includes("recomend");
+
+    const wantsRowColTotals = totals.includes("fila") || totals.includes("columna");
+    const wantsCharts = !!payload?.preferences?.wantCharts;
+
+    let columns = [
+      { header: "Fecha", key: "fecha", type: "date", width: 14 },
+      { header: "Concepto", key: "concepto", type: "text", width: 36 },
+      { header: "Categoría", key: "categoria", type: "text", width: 20 },
+      { header: "Forma de pago", key: "pago", type: "text", width: 16 },
+      { header: "Ingreso", key: "ingreso", type: "currency", width: 14 },
+      { header: "Egreso", key: "egreso", type: "currency", width: 14 },
+    ];
+
+    const isCuentas = controlType.includes("cuentas") || purpose.includes("cobrar") || purpose.includes("pagar");
+    if (isCuentas) {
+      columns = [
+        { header: "Fecha", key: "fecha", type: "date", width: 14 },
+        { header: "Cliente/Proveedor", key: "tercero", type: "text", width: 26 },
+        { header: "Concepto", key: "concepto", type: "text", width: 26 },
+        { header: "Vence", key: "vence", type: "date", width: 14 },
+        { header: "Estatus", key: "estatus", type: "text", width: 14 },
+        { header: "Monto", key: "monto", type: "currency", width: 14 },
+        { header: "Abono", key: "abono", type: "currency", width: 14 },
+        { header: "Saldo", key: "saldo", type: "currency", width: 14 },
+      ];
     }
 
-    const blob = await r.blob();
-    const dispo = r.headers.get("content-disposition");
-    const serverName = filenameFromDisposition(dispo, fileName);
-    const url = URL.createObjectURL(blob);
+    const isFlujo = controlType.includes("flujo") || purpose.includes("efectivo");
+    if (isFlujo) {
+      columns = [
+        { header: "Fecha", key: "fecha", type: "date", width: 14 },
+        { header: "Movimiento", key: "mov", type: "text", width: 34 },
+        { header: "Banco/Caja", key: "banco", type: "text", width: 18 },
+        { header: "Entrada", key: "entrada", type: "currency", width: 14 },
+        { header: "Salida", key: "salida", type: "currency", width: 14 },
+        { header: "Saldo", key: "saldo", type: "currency", width: 14 },
+        { header: "Notas", key: "notas", type: "text", width: 22 },
+      ];
+    }
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = serverName || fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const notes = {
+      purpose: payload?.wizard?.purpose || "",
+      level: payload?.wizard?.level || "",
+      periodicity: payload?.wizard?.periodicity || "",
+      industry: payload?.wizard?.industry || "",
+      theme: payload?.preferences?.theme || "",
+      wantCharts: !!payload?.preferences?.wantCharts,
+      wantImages: !!payload?.preferences?.wantImages,
+      context: payload?.context || {},
+      uiOption: "A",
+      totalsMode: wantsRowColTotals ? "row_col" : "general",
+    };
+
+    const sheets = [
+      {
+        name: sheetName || "Data",
+        kind: "data",
+        style: {
+          header: { bold: true, freeze: true },
+          zebra: true,
+        },
+        data: {
+          columns,
+          exampleRows: buildExampleRows(columns),
+          totals: wantsRowColTotals
+            ? {
+                mode: "row_col",
+                currencyCols: columns.filter((c) => c.type === "currency").map((c) => c.key),
+              }
+            : { mode: "general" },
+        },
+      },
+    ];
+
+    const kpis = [];
+
+    if (isFlujo) {
+      const L_in = colLetter(columns, "entrada");
+      const L_out = colLetter(columns, "salida");
+      kpis.push({ label: "Entradas", formula: `=SUM(${sheetName}!${L_in}:${L_in})`, format: "currency" });
+      kpis.push({ label: "Salidas", formula: `=SUM(${sheetName}!${L_out}:${L_out})`, format: "currency" });
+      kpis.push({ label: "Balance", formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`, format: "currency" });
+      kpis.push({
+        label: "Saldo total",
+        formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`,
+        format: "currency",
+      });
+    } else if (isCuentas) {
+      kpis.push({ label: "Monto total", formula: `=SUM(${sheetName}!${colLetter(columns, "monto")}:${colLetter(columns, "monto")})`, format: "currency" });
+      kpis.push({ label: "Abonos", formula: `=SUM(${sheetName}!${colLetter(columns, "abono")}:${colLetter(columns, "abono")})`, format: "currency" });
+      kpis.push({ label: "Saldo total", formula: `=SUM(${sheetName}!${colLetter(columns, "saldo")}:${colLetter(columns, "saldo")})`, format: "currency" });
+      kpis.push({
+        label: "Pendientes",
+        formula: `=COUNTIF(${sheetName}!${colLetter(columns, "estatus")}:${colLetter(columns, "estatus")},"Pendiente")`,
+        format: "number",
+      });
+    } else {
+      const L_in = colLetter(columns, "ingreso");
+      const L_out = colLetter(columns, "egreso");
+      kpis.push({ label: "Ingresos", formula: `=SUM(${sheetName}!${L_in}:${L_in})`, format: "currency" });
+      kpis.push({ label: "Egresos", formula: `=SUM(${sheetName}!${L_out}:${L_out})`, format: "currency" });
+      kpis.push({ label: "Balance", formula: `=${kpiCellRefByIndex(0)}-${kpiCellRefByIndex(1)}`, format: "currency" });
+    }
+
+    if (wantsDashboard) {
+      sheets.push({
+        name: "Dashboard",
+        kind: "dashboard",
+        layout: {
+          option: "A",
+          kpiCard: { merge: false, labelTop: true },
+          spacing: "comfortable",
+        },
+        charts: wantsCharts ? [{ type: "bar", title: "Resumen", from: sheetName }] : [],
+        kpis,
+      });
+    }
+
+    return {
+      version: "1.1",
+      workbook: {
+        theme: "dark-gold",
+        title: fileName.replace(/\.xlsx$/i, ""),
+      },
+      sheets,
+      kpis,
+      notes,
+    };
+  };
+
+  async function generateExcelFromWizard(payload) {
+    if (!payload) throw new Error("No payload recibido del wizard");
+    if (!activeProject) throw new Error("No hay proyecto activo");
+
+    const fileName = payload?.file?.fileName || "AUREA_excel.xlsx";
+    const spec = wizardPayloadToSpec(payload);
 
     setExcelMeta({
-      lastOkAt: uidNow(),
+      lastSpec: spec,
+      lastFileName: fileName,
       lastError: null,
-      lastFileName: serverName || fileName,
     });
 
-    setGenStatus("✅ Excel descargado");
-    toast("Excel descargado ✅", serverName || fileName, "ok");
-    return { ok: true, fileName: serverName || fileName };
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      setGenStatus("⏹️ Excel cancelado");
-      toast("Excel cancelado", "Se canceló la generación", "warn", 2500);
-      return { ok: false, aborted: true };
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    setBusy(true);
+    setGenStatus("🧾 Generando Excel...");
+
+    try {
+      const token = await getAuthToken().catch(() => null);
+
+      const r = await fetch(EXCEL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          mode: "generate",
+          engine: "exceljs",
+          fileName,
+          spec,
+          wizard: payload?.wizard || null,
+          preferences: payload?.preferences || null,
+          context: payload?.context || null,
+          file: payload?.file || null,
+        }),
+        signal: ac.signal,
+      });
+
+      if (!r.ok) {
+        let errMsg = "";
+        const ct = r.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          const j = await r.json().catch(() => ({}));
+          errMsg = j?.error || j?.message || "";
+        } else {
+          errMsg = await r.text().catch(() => "");
+        }
+        throw new Error(errMsg || `HTTP ${r.status}`);
+      }
+
+      const blob = await r.blob();
+      const dispo = r.headers.get("content-disposition");
+      const serverName = filenameFromDisposition(dispo, fileName);
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = serverName || fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setExcelMeta({
+        lastOkAt: uidNow(),
+        lastError: null,
+        lastFileName: serverName || fileName,
+      });
+
+      setGenStatus("✅ Excel descargado");
+      toast("Excel descargado ✅", serverName || fileName, "ok");
+      return { ok: true, fileName: serverName || fileName };
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        setGenStatus("⏹️ Excel cancelado");
+        toast("Excel cancelado", "Se canceló la generación", "warn", 2500);
+        return { ok: false, aborted: true };
+      }
+      const msg = e?.message || "Failed to fetch";
+      setExcelMeta({ lastError: msg });
+      setGenStatus("");
+      toast("Excel error", msg, "error", 4500);
+      alert(`⚠️ Excel: ${msg}`);
+      return { ok: false, error: msg };
+    } finally {
+      setBusy(false);
+      setTimeout(() => setGenStatus(""), 900);
     }
-    const msg = e?.message || "Failed to fetch";
-    setExcelMeta({ lastError: msg });
-    setGenStatus("");
-    toast("Excel error", msg, "error", 4500);
-    alert(`⚠️ Excel: ${msg}`);
-    return { ok: false, error: msg };
-  } finally {
-    setBusy(false);
-    setTimeout(() => setGenStatus(""), 900);
   }
-}
 
-const onWizardSubmit = async (payload) => {
-  await generateExcelFromWizard(payload);
-};
-
-const generateExcelTest = async () => {
-  const payload = {
-    mode: "excel",
-    wizard: {
-      purpose: "Contable / Finanzas",
-      level: "Profesional",
-      periodicity: "Diario",
-      industry: "Clínica / salud / consultorio",
-    },
-    preferences: { theme: "Dark/Gold (Aurea33)", wantCharts: true, wantImages: false },
-    context: {
-      columns_need: "Fecha, concepto, ingreso, egreso, categoría, forma de pago",
-      totals_auto: "Sí, por fila y por columna",
-      controlType: "Ingresos/Egresos",
-      dashboard: "Sí (recomendado)",
-    },
-    file: { fileName: "prueba.xlsx", sheetName: "Data" },
+  const onWizardSubmit = async (payload) => {
+    await generateExcelFromWizard(payload);
   };
 
-  await generateExcelFromWizard(payload);
-};
+  const generateExcelTest = async () => {
+    const payload = {
+      mode: "excel",
+      wizard: {
+        purpose: "Contable / Finanzas",
+        level: "Profesional",
+        periodicity: "Diario",
+        industry: "Clínica / salud / consultorio",
+      },
+      preferences: { theme: "Dark/Gold (Aurea33)", wantCharts: true, wantImages: false },
+      context: {
+        columns_need: "Fecha, concepto, ingreso, egreso, categoría, forma de pago",
+        totals_auto: "Sí, por fila y por columna",
+        controlType: "Ingresos/Egresos",
+        dashboard: "Sí (recomendado)",
+      },
+      file: { fileName: "prueba.xlsx", sheetName: "Data" },
+    };
+    await generateExcelFromWizard(payload);
+  };
 
-const resetExcelMeta = () => {
-  setExcelMeta({
-    lastSpec: null,
-    lastFileName: null,
-    lastOkAt: null,
-    lastError: null,
-  });
-  toast("Excel reset", "Meta limpia", "warn");
-};
-
-/* ----------------------------- 🔥🔥FINAL EXCEL  ----------------------------- */
+  const resetExcelMeta = () => {
+    setExcelMeta({
+      lastSpec: null,
+      lastFileName: null,
+      lastOkAt: null,
+      lastError: null,
+    });
+    toast("Excel reset", "Meta limpia", "warn");
+  };
 
   /* ----------------------------- Sidebar: Projects ----------------------------- */
   const createNewProject = () => {
@@ -1650,22 +1550,22 @@ const resetExcelMeta = () => {
   };
 
   const resetProject = (id) => {
-  setProjects((prev) =>
-    prev.map((p) => {
-      if (p.id !== id) return p;
-      const tabs = {
-        chat: { messages: [] },
-        images: { messages: [] },
-        code: { messages: [] },
-        studio: { meta: { activeDocId: null, lastTemplate: null }, docs: [] },
-        excel: { meta: {} },
-      };
-      return { ...p, tabs, updatedAt: uidNow() };
-    })
-  );
-  setOpenMenuId(null);
-  toast("Reset", "Mensajes borrados", "warn");
-};
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const tabs = {
+          chat: { messages: [] },
+          images: { messages: [] },
+          code: { messages: [] },
+          studio: { meta: { activeDocId: null, lastTemplate: null }, docs: [] },
+          excel: { meta: {} },
+        };
+        return { ...p, tabs, updatedAt: uidNow() };
+      })
+    );
+    setOpenMenuId(null);
+    toast("Reset", "Mensajes borrados", "warn");
+  };
 
   /* ----------------------------- UX: Quick Actions (local) ----------------------------- */
   const quickForTab = (tabKey, kind) => {
@@ -1693,84 +1593,78 @@ const resetExcelMeta = () => {
     toast("Quick Action", `${kind} (${tabKey})`, "ok");
   };
 
+  /* ----------------------------- Inline Presets (Paso 3.5) ----------------------------- */
+  const INLINE_PRESETS = {
+    images: [
+      { label: "IG Post 1080", text: "Post de Instagram 1080x1080, estilo premium, fondo oscuro, tipografía grande, composición moderna, espacio para logo." },
+      { label: "Story 9:16", text: "Historia Instagram 1080x1920 (9:16), diseño vertical, título arriba, CTA abajo, estilo Aurea33 dark/gold, alto contraste." },
+      { label: "FB Cover", text: "Portada de Facebook 820x312, diseño horizontal, headline grande, elementos visuales equilibrados, estilo futurista." },
+      { label: "Producto", text: "Mockup de producto con fondo minimal, iluminación suave, texto corto de beneficio, estilo comercial premium." },
+    ],
+    chat: [
+      { label: "Mejorar texto", text: "Mejora mi texto para que sea más claro, persuasivo y ordenado:\n" },
+      { label: "Versión corta", text: "Reescribe esto en versión corta y poderosa:\n" },
+      { label: "Versión emocional", text: "Reescribe esto con tono emocional, humano y empático:\n" },
+      { label: "Bullet points", text: "Convierte esto en bullets claros y accionables:\n" },
+    ],
+    code: [
+      { label: "Fix bug", text: "Encuentra el bug y dame el fix exacto con explicación breve:\n" },
+      { label: "Refactor PRO", text: "Refactoriza este código a nivel PRO (limpio, escalable, sin romper nada):\n" },
+      { label: "Optimizar", text: "Optimiza rendimiento y estructura sin cambiar funcionalidad:\n" },
+      { label: "TypeScript", text: "Pásalo a TypeScript y agrega types correctos:\n" },
+    ],
+  };
 
-/* ----------------------------- Inline Presets (Paso 3.5) ----------------------------- */
+  const applyInlinePreset = (tabKey, presetText) => {
+    if (busy) return;
 
-const INLINE_PRESETS = {
-  images: [
-    { label: "IG Post 1080", text: "Post de Instagram 1080x1080, estilo premium, fondo oscuro, tipografía grande, composición moderna, espacio para logo." },
-    { label: "Story 9:16", text: "Historia Instagram 1080x1920 (9:16), diseño vertical, título arriba, CTA abajo, estilo Aurea33 dark/gold, alto contraste." },
-    { label: "FB Cover", text: "Portada de Facebook 820x312, diseño horizontal, headline grande, elementos visuales equilibrados, estilo futurista." },
-    { label: "Producto", text: "Mockup de producto con fondo minimal, iluminación suave, texto corto de beneficio, estilo comercial premium." },
-  ],
-  chat: [
-    { label: "Mejorar texto", text: "Mejora mi texto para que sea más claro, persuasivo y ordenado:\n" },
-    { label: "Versión corta", text: "Reescribe esto en versión corta y poderosa:\n" },
-    { label: "Versión emocional", text: "Reescribe esto con tono emocional, humano y empático:\n" },
-    { label: "Bullet points", text: "Convierte esto en bullets claros y accionables:\n" },
-  ],
-  code: [
-    { label: "Fix bug", text: "Encuentra el bug y dame el fix exacto con explicación breve:\n" },
-    { label: "Refactor PRO", text: "Refactoriza este código a nivel PRO (limpio, escalable, sin romper nada):\n" },
-    { label: "Optimizar", text: "Optimiza rendimiento y estructura sin cambiar funcionalidad:\n" },
-    { label: "TypeScript", text: "Pásalo a TypeScript y agrega types correctos:\n" },
-  ],
-};
+    if (tabKey === "images") {
+      setImgPrompt((prev) => (prev?.trim() ? `${prev}\n\n${presetText}` : presetText));
+      toast("Preset", "Aplicado a Images", "ok");
+      return;
+    }
+    if (tabKey === "chat") {
+      const last = (activeProject?.tabs?.chat?.messages || []).slice(-1)[0]?.text || "";
+      setChatInput((prev) => {
+        const base = presetText;
+        if (base.endsWith("\n") && !prev?.trim() && last) return `${base}${last}`;
+        return prev?.trim() ? `${prev}\n\n${base}` : base;
+      });
+      toast("Preset", "Aplicado a Chat", "ok");
+      return;
+    }
+    if (tabKey === "code") {
+      const last = (activeProject?.tabs?.code?.messages || []).slice(-1)[0]?.text || "";
+      setCodeInput((prev) => {
+        const base = presetText;
+        if (base.endsWith("\n") && !prev?.trim() && last) return `${base}${last}`;
+        return prev?.trim() ? `${prev}\n\n${base}` : base;
+      });
+      toast("Preset", "Aplicado a Code", "ok");
+      return;
+    }
+  };
 
-const applyInlinePreset = (tabKey, presetText) => {
-  if (busy) return;
+  const InlineChips = ({ tabKey }) => {
+    const items = INLINE_PRESETS?.[tabKey] || [];
+    if (!items.length) return null;
 
-  if (tabKey === "images") {
-    setImgPrompt((prev) => (prev?.trim() ? `${prev}\n\n${presetText}` : presetText));
-    toast("Preset", "Aplicado a Images", "ok");
-    return;
-  }
-  if (tabKey === "chat") {
-    const last = (activeProject?.tabs?.chat?.messages || []).slice(-1)[0]?.text || "";
-    setChatInput((prev) => {
-      const base = presetText;
-      // si el preset termina con \n (como “Mejora esto:\n”) y no hay nada, sugiere last
-      if (base.endsWith("\n") && !prev?.trim() && last) return `${base}${last}`;
-      return prev?.trim() ? `${prev}\n\n${base}` : base;
-    });
-    toast("Preset", "Aplicado a Chat", "ok");
-    return;
-  }
-  if (tabKey === "code") {
-    const last = (activeProject?.tabs?.code?.messages || []).slice(-1)[0]?.text || "";
-    setCodeInput((prev) => {
-      const base = presetText;
-      if (base.endsWith("\n") && !prev?.trim() && last) return `${base}${last}`;
-      return prev?.trim() ? `${prev}\n\n${base}` : base;
-    });
-    toast("Preset", "Aplicado a Code", "ok");
-    return;
-  }
-};
-
-const InlineChips = ({ tabKey }) => {
-  const items = INLINE_PRESETS?.[tabKey] || [];
-  if (!items.length) return null;
-
-  return (
-    <div style={inlineChipsRow()}>
-      {items.map((x) => (
-        <button
-          key={x.label}
-          style={inlineChipBtn()}
-          onClick={() => applyInlinePreset(tabKey, x.text)}
-          disabled={busy}
-          title={x.text}
-        >
-          {x.label}
-        </button>
-      ))}
-    </div>
-  );
-};
-
-
-
+    return (
+      <div style={inlineChipsRow()}>
+        {items.map((x) => (
+          <button
+            key={x.label}
+            style={inlineChipBtn()}
+            onClick={() => applyInlinePreset(tabKey, x.text)}
+            disabled={busy}
+            title={x.text}
+          >
+            {x.label}
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   /* ----------------------------- Global click close menus ----------------------------- */
   useEffect(() => {
@@ -1809,9 +1703,7 @@ const InlineChips = ({ tabKey }) => {
     const q = queryText.trim().toLowerCase();
     if (!q) return { projects: [], messages: [] };
 
-    const projs = sortedProjects
-      .filter((p) => (p.title || "").toLowerCase().includes(q))
-      .slice(0, 10);
+    const projs = sortedProjects.filter((p) => (p.title || "").toLowerCase().includes(q)).slice(0, 10);
 
     const msgs = [];
     sortedProjects.forEach((p) => {
@@ -1842,25 +1734,24 @@ const InlineChips = ({ tabKey }) => {
 
   const jumpToSearchMessage = (r) => {
     setActiveProjectId(r.projectId);
-    setActiveTab(r.tab);
+    setTab(r.tab);
     setSearchOpen(false);
     setTimeout(() => scrollToMessage(r.msgId), 140);
     toast("Jump", `${r.projectTitle} → ${r.tab}`, "ok");
   };
 
   const setTab = (key) => {
-  setActiveTab(key);
-  if (user?.uid) safeSetLS(lsKeyActiveTab(user.uid), key);
-};
+    setActiveTab(key);
+    if (user?.uid) safeSetLS(lsKeyActiveTab(user.uid), key);
+  };
 
-
-const toggleSidebar = () => {
-  setSidebarCollapsed(prev => {
-    const next = !prev;
-    if (user?.uid) safeSetLS(lsKeySidebar(user.uid), next ? "1" : "0");
-    return next;
-  });
-};
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      if (user?.uid) safeSetLS(lsKeySidebar(user.uid), next ? "1" : "0");
+      return next;
+    });
+  };
 
   /* ----------------------------- loader seguro ----------------------------- */
   if (!authReady) {
@@ -1884,191 +1775,179 @@ const toggleSidebar = () => {
   const excelMeta = activeProject?.tabs?.excel?.meta || {};
   const apiExcelStatus = excelMeta?.lastOkAt ? "ok" : excelMeta?.lastError ? "error" : "—";
 
-/* ✅ AQUÍ MISMO, ANTES DEL return */
-const SidebarContent = () => (
-  <>
-    <div style={sidebarHeader()}>
-      <div style={{ fontWeight: 900 }}>AUREA CORE</div>
-      <div style={{ fontSize: 12, opacity: 0.7 }}>
-        Proyectos persistentes • Tabs fijos • Historial local
-      </div>
-    </div>
-
-    <div style={sidebarActions()}>
-      <div style={{ fontWeight: 900, opacity: 0.9 }}>PROYECTOS</div>
-      <button style={btnGhostSmall()} onClick={createNewProject}>
-        + Nuevo
-      </button>
-    </div>
-
-
-    {/* Live Metrics */}
-    <div style={metricsWrap()}>
-      <div style={metricCard()}>
-        <div style={metricLabel()}>Mensajes</div>
-        <div style={metricValue()}>{totalMessages}</div>
-      </div>
-      <div style={metricCard()}>
-        <div style={metricLabel()}>Palabras</div>
-        <div style={metricValue()}>{totalWords}</div>
-      </div>
-      <div style={metricCardWide()}>
-        <div style={metricLabel()}>Último</div>
-        <div style={metricValueSmall()}>{new Date(uidNow()).toLocaleString()}</div>
+  /* ✅ Sidebar content */
+  const SidebarContent = () => (
+    <>
+      <div style={sidebarHeader()}>
+        <div style={{ fontWeight: 900 }}>AUREA CORE</div>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>Proyectos persistentes • Tabs fijos • Historial local</div>
       </div>
 
-      <div style={metricCardWide(activeTab === "chat" ? "ok" : "idle")}>
-        <div style={metricLabel()}>API Chat</div>
-        <div style={metricValueSmall()}>{activeTab === "chat" ? "ok" : "—"}</div>
+      <div style={sidebarActions()}>
+        <div style={{ fontWeight: 900, opacity: 0.9 }}>PROYECTOS</div>
+        <button style={btnGhostSmall()} onClick={createNewProject}>
+          + Nuevo
+        </button>
       </div>
-      <div style={metricCardWide(activeTab === "code" ? "ok" : "idle")}>
-        <div style={metricLabel()}>API Code</div>
-        <div style={metricValueSmall()}>{activeTab === "code" ? "ok" : "unknown"}</div>
+
+      {/* Live Metrics */}
+      <div style={metricsWrap()}>
+        <div style={metricCard()}>
+          <div style={metricLabel()}>Mensajes</div>
+          <div style={metricValue()}>{totalMessages}</div>
+        </div>
+        <div style={metricCard()}>
+          <div style={metricLabel()}>Palabras</div>
+          <div style={metricValue()}>{totalWords}</div>
+        </div>
+        <div style={metricCardWide()}>
+          <div style={metricLabel()}>Último</div>
+          <div style={metricValueSmall()}>{new Date(uidNow()).toLocaleString()}</div>
+        </div>
+
+        <div style={metricCardWide(activeTab === "chat" ? "ok" : "idle")}>
+          <div style={metricLabel()}>API Chat</div>
+          <div style={metricValueSmall()}>{activeTab === "chat" ? "ok" : "—"}</div>
+        </div>
+        <div style={metricCardWide(activeTab === "code" ? "ok" : "idle")}>
+          <div style={metricLabel()}>API Code</div>
+          <div style={metricValueSmall()}>{activeTab === "code" ? "ok" : "unknown"}</div>
+        </div>
+        <div style={metricCardWide(apiExcelStatus === "ok" ? "ok" : apiExcelStatus === "error" ? "err" : "idle")}>
+          <div style={metricLabel()}>API Excel</div>
+          <div style={metricValueSmall()}>{apiExcelStatus}</div>
+        </div>
       </div>
-      <div
-        style={metricCardWide(
-          apiExcelStatus === "ok" ? "ok" : apiExcelStatus === "error" ? "err" : "idle"
-        )}
-      >
-        <div style={metricLabel()}>API Excel</div>
-        <div style={metricValueSmall()}>{apiExcelStatus}</div>
+
+      <div style={miniTabsRow()}>
+        <span style={miniTabPill(activeTab === "chat")} onClick={() => setTab("chat")}>
+          💬 Chat
+        </span>
+        <span style={miniTabPill(activeTab === "code")} onClick={() => setTab("code")}>
+          🧠 Code
+        </span>
+        <span style={miniTabPill(activeTab === "images")} onClick={() => setTab("images")}>
+          🖼️ Images
+        </span>
+        <span style={miniTabPill(activeTab === "studio")} onClick={() => setTab("studio")}>
+          🎛️ Studio
+        </span>
+        <span style={miniTabPill(activeTab === "excel")} onClick={() => setTab("excel")}>
+          📄 Excel
+        </span>
       </div>
-    </div>
 
-    <div style={miniTabsRow()}>
-<span style={miniTabPill(activeTab === "chat")} onClick={() => setTab("chat")}>
-        💬 Chat
-      </span>
-      <span style={miniTabPill(activeTab === "code")} onClick={() => setActiveTab("code")}>
-        🧠 Code
-      </span>
-      <span style={miniTabPill(activeTab === "images")} onClick={() => setActiveTab("images")}>
-        🖼️ Images
-      </span>
-      <span style={miniTabPill(activeTab === "studio")} onClick={() => setActiveTab("studio")}>
-        🎛️ Studio
-      </span>
-      <span style={miniTabPill(activeTab === "excel")} onClick={() => setActiveTab("excel")}>
-        📄 Excel
-      </span>
-    </div>
-
-    <div style={projectList()}>
-      {sortedProjects.map((p) => {
-        const active = p.id === activeProjectId;
-        return (
-          <div
-            key={p.id}
-            style={projectItem(active)}
-            onClick={() => setActiveProjectId(p.id)}
-            title={p.title}
-          >
-            <div style={projectTitle()}>
-              {p.pinned ? "⭐ " : ""}
-              {p.title}
-            </div>
-            <div style={projectSub()}>
-              {new Date(p.updatedAt || p.createdAt).toLocaleString()}
-            </div>
-
-            <button
-              style={miniPill()}
-              onClick={(e) => {
-                e.stopPropagation();
-                const next = prompt("Renombrar proyecto:", p.title);
-                if (next && next.trim()) renameProject(p.id, next.trim());
-              }}
-              title="Renombrar"
+      <div style={projectList()}>
+        {sortedProjects.map((p) => {
+          const active = p.id === activeProjectId;
+          return (
+            <div
+              key={p.id}
+              style={projectItem(active)}
+              onClick={() => setActiveProjectId(p.id)}
+              title={p.title}
             >
-              ✏️
-            </button>
-
-            <button
-              style={miniPillDots(active)}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenuId((v) => (v === p.id ? null : p.id));
-              }}
-              title="Más acciones"
-            >
-              ⋯
-            </button>
-
-            {openMenuId === p.id && (
-              <div style={menuPanel()} onClick={(e) => e.stopPropagation()}>
-                <button style={menuItem()} onClick={() => toggleProjectPin(p.id)}>
-                  {p.pinned ? "⭐ Desfijar proyecto" : "⭐ Fijar proyecto"}
-                </button>
-
-                <button style={menuItem()} onClick={() => duplicateProject(p.id)}>
-                  📄 Duplicar
-                </button>
-                <button style={menuItem()} onClick={() => exportProject(p.id)}>
-                  ⬇️ Exportar JSON
-                </button>
-
-                <div style={menuSep()} />
-
-                <button
-                  style={menuItem()}
-                  onClick={() => {
-                    setActiveProjectId(p.id);
-                    setTimeout(() => exportConversationTxt(activeTab === "excel" ? "chat" : activeTab), 0);
-                    setOpenMenuId(null);
-                  }}
-                >
-                  🧾 Exportar TAB a TXT
-                </button>
-
-                <button
-                  style={menuItem()}
-                  onClick={() => {
-                    setActiveProjectId(p.id);
-                    setTimeout(() => exportConversationPdf(activeTab === "excel" ? "chat" : activeTab), 0);
-                    setOpenMenuId(null);
-                  }}
-                >
-                  🖨️ Exportar TAB a PDF
-                </button>
-
-                <div style={menuSep()} />
-
-                <button
-                  style={menuItem()}
-                  onClick={() => {
-                    const ok = confirm("¿Resetear mensajes de este proyecto? (no borra el proyecto)");
-                    if (ok) resetProject(p.id);
-                  }}
-                >
-                  ↩️ Reset mensajes
-                </button>
-
-                <div style={menuSep()} />
-
-                <button
-                  style={menuItemDanger()}
-                  onClick={() => {
-                    const ok = confirm("¿Eliminar este proyecto? Esto no se puede deshacer.");
-                    if (ok) deleteProject(p.id);
-                  }}
-                >
-                  🗑️ Eliminar
-                </button>
+              <div style={projectTitle()}>
+                {p.pinned ? "⭐ " : ""}
+                {p.title}
               </div>
-            )}
-          </div>
-        );
-      })}
+              <div style={projectSub()}>{new Date(p.updatedAt || p.createdAt).toLocaleString()}</div>
 
-      <div style={{ fontSize: 12, opacity: 0.55, marginTop: 8 }}>
-        Tip: 1 proyecto = 1 cliente / campaña / tarea
+              <button
+                style={miniPill()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = prompt("Renombrar proyecto:", p.title);
+                  if (next && next.trim()) renameProject(p.id, next.trim());
+                }}
+                title="Renombrar"
+              >
+                ✏️
+              </button>
+
+              <button
+                style={miniPillDots(active)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenuId((v) => (v === p.id ? null : p.id));
+                }}
+                title="Más acciones"
+              >
+                ⋯
+              </button>
+
+              {openMenuId === p.id && (
+                <div style={menuPanel()} onClick={(e) => e.stopPropagation()}>
+                  <button style={menuItem()} onClick={() => toggleProjectPin(p.id)}>
+                    {p.pinned ? "⭐ Desfijar proyecto" : "⭐ Fijar proyecto"}
+                  </button>
+
+                  <button style={menuItem()} onClick={() => duplicateProject(p.id)}>
+                    📄 Duplicar
+                  </button>
+                  <button style={menuItem()} onClick={() => exportProject(p.id)}>
+                    ⬇️ Exportar JSON
+                  </button>
+
+                  <div style={menuSep()} />
+
+                  <button
+                    style={menuItem()}
+                    onClick={() => {
+                      setActiveProjectId(p.id);
+                      setTimeout(() => exportConversationTxt(activeTab === "excel" ? "chat" : activeTab), 0);
+                      setOpenMenuId(null);
+                    }}
+                  >
+                    🧾 Exportar TAB a TXT
+                  </button>
+
+                  <button
+                    style={menuItem()}
+                    onClick={() => {
+                      setActiveProjectId(p.id);
+                      setTimeout(() => exportConversationPdf(activeTab === "excel" ? "chat" : activeTab), 0);
+                      setOpenMenuId(null);
+                    }}
+                  >
+                    🖨️ Exportar TAB a PDF
+                  </button>
+
+                  <div style={menuSep()} />
+
+                  <button
+                    style={menuItem()}
+                    onClick={() => {
+                      const ok = confirm("¿Resetear mensajes de este proyecto? (no borra el proyecto)");
+                      if (ok) resetProject(p.id);
+                    }}
+                  >
+                    ↩️ Reset mensajes
+                  </button>
+
+                  <div style={menuSep()} />
+
+                  <button
+                    style={menuItemDanger()}
+                    onClick={() => {
+                      const ok = confirm("¿Eliminar este proyecto? Esto no se puede deshacer.");
+                      if (ok) deleteProject(p.id);
+                    }}
+                  >
+                    🗑️ Eliminar
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ fontSize: 12, opacity: 0.55, marginTop: 8 }}>Tip: 1 proyecto = 1 cliente / campaña / tarea</div>
       </div>
-    </div>
-  </>
-);
+    </>
+  );
 
-const MobileSidebarContent = SidebarContent;
-
+  const MobileSidebarContent = SidebarContent;
 
   return (
     <>
@@ -2076,37 +1955,63 @@ const MobileSidebarContent = SidebarContent;
         <title>AUREA 33 Studio</title>
       </Head>
 
-<style jsx global>{`
-  html, body { margin: 0; padding: 0; }
-  * { box-sizing: border-box; }
+      <style jsx global>{`
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        * {
+          box-sizing: border-box;
+        }
 
-  /* ✅ typingDots animation */
-  @keyframes aureaPulse {
-    0% { transform: translateX(0); opacity: .35; filter: blur(0px); }
-    50% { transform: translateX(8px); opacity: 1; filter: blur(.2px); }
-    100% { transform: translateX(0); opacity: .35; filter: blur(0px); }
-  }
+        @keyframes aureaPulse {
+          0% {
+            transform: translateX(0);
+            opacity: 0.35;
+            filter: blur(0px);
+          }
+          50% {
+            transform: translateX(8px);
+            opacity: 1;
+            filter: blur(0.2px);
+          }
+          100% {
+            transform: translateX(0);
+            opacity: 0.35;
+            filter: blur(0px);
+          }
+        }
 
-  /* ✅ scrollbars pro */
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb {
-    background: rgba(247,198,0,0.18);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-    border-radius: 999px;
-  }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(247,198,0,0.30); }
+        ::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: rgba(247, 198, 0, 0.18);
+          border: 2px solid transparent;
+          background-clip: padding-box;
+          border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(247, 198, 0, 0.3);
+        }
 
-  /* ✅ text selection */
-  ::selection { background: rgba(247,198,0,0.22); }
+        ::selection {
+          background: rgba(247, 198, 0, 0.22);
+        }
 
-  /* ✅ reduce motion */
-  @media (prefers-reduced-motion: reduce) {
-    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
-  }
-`}</style>
-
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+          }
+        }
+      `}</style>
 
       <div style={{ ...page(), ...themeVars }}>
         <div style={ambientGrid()} />
@@ -2119,9 +2024,7 @@ const MobileSidebarContent = SidebarContent;
             <div>
               <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
                 AUREA 33 STUDIO // LIVE
-                <span style={{ marginLeft: 10, fontSize: 11, opacity: 0.7 }}>
-                  (Ctrl+K palette • Ctrl+F search)
-                </span>
+                <span style={{ marginLeft: 10, fontSize: 11, opacity: 0.7 }}>(Ctrl+K palette • Ctrl+F search)</span>
               </div>
               <div style={{ fontSize: 12, opacity: 0.75, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <span style={chip()}>READY • MULTI • font 12px</span>
@@ -2130,80 +2033,66 @@ const MobileSidebarContent = SidebarContent;
               </div>
             </div>
           </div>
-{/* ✅ Mobile Drawer (MENÚ) */}
-{safeIsMobile && (
-  <>
-    {sidebarOpen && (
-      <div style={mobileOverlay()} onClick={() => setSidebarOpen(false)} />
-    )}
 
-    <div style={mobileDrawer(sidebarOpen)}>
-      <div style={drawerHeader()}>
-        <div style={{ fontWeight: 900, letterSpacing: 0.4 }}>
-          AUREA 33 MENU
-        </div>
+          {/* ✅ Mobile Drawer */}
+          {safeIsMobile && (
+            <>
+              {sidebarOpen && <div style={mobileOverlay()} onClick={() => setSidebarOpen(false)} />}
 
-        <button onClick={() => setSidebarOpen(false)} style={btnGhost()}>
-          ✕
-        </button>
-      </div>
+              <div style={mobileDrawer(sidebarOpen)}>
+                <div style={drawerHeader()}>
+                  <div style={{ fontWeight: 900, letterSpacing: 0.4 }}>AUREA 33 MENU</div>
+                  <button onClick={() => setSidebarOpen(false)} style={btnGhost()}>
+                    ✕
+                  </button>
+                </div>
 
-      <div style={drawerBody()}>
-        <MobileSidebarContent />
-      </div>
-    </div>
-  </>
-)}
+                <div style={drawerBody()}>
+                  <MobileSidebarContent />
+                </div>
+              </div>
+            </>
+          )}
 
-          <div
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    flexWrap: "wrap",
-  }}
->
- {safeIsMobile && (
-    <button
-      onClick={() => setSidebarOpen(true)}
-      style={btnGhost()}
-      title="Menú"
-    >
-      ☰
-    </button>
-  )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {safeIsMobile && (
+              <button onClick={() => setSidebarOpen(true)} style={btnGhost()} title="Menú">
+                ☰
+              </button>
+            )}
 
-  <button onClick={() => setSearchOpen(true)} style={btnGhost()}>
-    Buscar (Ctrl+F)
-  </button>
+            <button onClick={() => setSearchOpen(true)} style={btnGhost()}>
+              Buscar (Ctrl+F)
+            </button>
 
-  <button onClick={() => setPaletteOpen(true)} style={btnGhost()}>
-    Comandos (Ctrl+K)
-  </button>
+            <button onClick={() => setPaletteOpen(true)} style={btnGhost()}>
+              Comandos (Ctrl+K)
+            </button>
 
-  <button
-    onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-    style={btnGhost()}
-  >
-    {theme === "light" ? "🌞 Light" : "🌙 Dark"}
-  </button>
+            <button onClick={toggleTheme} style={btnGhost()}>
+              {theme === "light" ? "🌞 Light" : "🌙 Dark"}
+            </button>
 
-  <button onClick={() => setInspectorOpen((v) => !v)} style={btnGhost()}>
-    Inspector
-  </button>
+            <button onClick={() => setInspectorOpen((v) => !v)} style={btnGhost()}>
+              Inspector
+            </button>
 
             <button onClick={() => setHudOpen((v) => !v)} style={btnGhost()}>
               {hudOpen ? "✓ HUD" : "HUD"}
             </button>
+
             <button onClick={() => setCompact((v) => !v)} style={btnGhost()}>
               {compact ? "✓ Compact" : "Compact"}
             </button>
+
             <button onClick={cancelAll} style={btnDanger()} disabled={!busy} title="Cancelar">
               ⛔ Cancelar
             </button>
+
             <button onClick={() => router.push("/dashboard")} style={btnGhost()}>
               ← Dashboard
             </button>
+
             <button onClick={onLogout} style={btnPrimary()}>
               Logout
             </button>
@@ -2212,12 +2101,10 @@ const MobileSidebarContent = SidebarContent;
 
         {/* Main */}
         <div style={layout(compact, hudOpen || inspectorOpen)}>
-
           {/* Sidebar */}
-         <aside style={{ ...sidebar(), ...(safeIsMobile ? { display: "none" } : {}) }}>
-  <SidebarContent />
-</aside>
-
+          <aside style={{ ...sidebar(), ...(safeIsMobile ? { display: "none" } : {}) }}>
+            <SidebarContent />
+          </aside>
 
           {/* Content */}
           <main style={mainCard()}>
@@ -2225,15 +2112,12 @@ const MobileSidebarContent = SidebarContent;
             <div style={tabsBar()}>
               {TABS.map((t) => (
                 <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(activeTab === t.key)}>
-
                   {t.title}
                 </button>
               ))}
 
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={statusPill(busy ? "busy" : "idle")}>
-                  {busy ? "PROCESSING" : `IDLE • ${activeTab.toUpperCase()}`}
-                </span>
+                <span style={statusPill(busy ? "busy" : "idle")}>{busy ? "PROCESSING" : `IDLE • ${activeTab.toUpperCase()}`}</span>
                 <span style={statusPill("ok")}>Listo ✅</span>
               </div>
             </div>
@@ -2245,7 +2129,6 @@ const MobileSidebarContent = SidebarContent;
               {activeTab === "code" && "🧠 Código conectado. Historial por proyecto."}
               {activeTab === "excel" && "📄 Excel Wizard activo (con descarga conectada + spec PRO)."}
               {activeTab === "studio" && "🎛️ AUREA STUDIO activo. Canvas persistente por proyecto."}
-
             </div>
 
             {/* Body */}
@@ -2260,9 +2143,7 @@ const MobileSidebarContent = SidebarContent;
                         {m.role === "user" ? "YOU" : "AUREA"}: {(m.text || "…").slice(0, 46)}
                       </button>
                     ))}
-                    {pinnedMessagesForTab.length > 12 && (
-                      <span style={{ opacity: 0.6 }}>+{pinnedMessagesForTab.length - 12} más</span>
-                    )}
+                    {pinnedMessagesForTab.length > 12 && <span style={{ opacity: 0.6 }}>+{pinnedMessagesForTab.length - 12} más</span>}
                   </div>
                 </div>
               )}
@@ -2288,14 +2169,15 @@ const MobileSidebarContent = SidebarContent;
                   </div>
 
                   <QuickActions
-  onSummary={() => quickForTab("images", "summary")}
-  onImprove={() => quickForTab("images", "improve")}
-  onContinue={() => quickForTab("images", "continue")}
-  onExportTxt={() => exportConversationTxt("images")}
-  onExportPdf={() => exportConversationPdf("images")}
-/>
-{/* ✅ Paso 3.5: Chips inline */}
-<InlineChips tabKey="images" />
+                    onSummary={() => quickForTab("images", "summary")}
+                    onImprove={() => quickForTab("images", "improve")}
+                    onContinue={() => quickForTab("images", "continue")}
+                    onExportTxt={() => exportConversationTxt("images")}
+                    onExportPdf={() => exportConversationPdf("images")}
+                  />
+
+                  <InlineChips tabKey="images" />
+
                   <div style={inputRow()}>
                     <input
                       value={imgPrompt}
@@ -2339,8 +2221,9 @@ const MobileSidebarContent = SidebarContent;
                     onExportTxt={() => exportConversationTxt("chat")}
                     onExportPdf={() => exportConversationPdf("chat")}
                   />
-{/* ✅ Paso 3.5: Chips inline */}
-<InlineChips tabKey="chat" />
+
+                  <InlineChips tabKey="chat" />
+
                   <div style={inputRow()}>
                     <input
                       value={chatInput}
@@ -2359,44 +2242,52 @@ const MobileSidebarContent = SidebarContent;
                 </>
               )}
 
-              {/* STUDIO */}
-             {/*🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥 STUDIO (🔥 Firefly-style Shell 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥) */}
-{/* STUDIO (LIMPIO: toda UI vive en CanvasEditor.jsx / StudioCanvas.jsx) */}
-{activeTab === "studio" && (() => {
-  const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
-  const activeDocEntry = (studioSafe.docs || []).find(
-    (d) => d.id === studioSafe.meta.activeDocId
-  );
-  const canvasDoc = activeDocEntry?.doc;
+              {/* STUDIO (LIMPIO) */}
+              {activeTab === "studio" &&
+                (() => {
+                  const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+                  const activeDocEntry = (studioSafe.docs || []).find((d) => d.id === studioSafe.meta.activeDocId);
+                  const canvasDoc = activeDocEntry?.doc;
 
-  // Guarda el doc del canvas en el proyecto activo
-  const setCanvasDoc = (nextDoc) => {
-    const nextStudio = {
-      ...studioSafe,
-      docs: (studioSafe.docs || []).map((d) =>
-        d.id === studioSafe.meta.activeDocId
-          ? { ...d, updatedAt: uidNow(), doc: nextDoc }
-          : d
-      ),
-    };
-    updateProjectTab("studio", nextStudio);
-  };
+                  const setCanvasDoc = (nextDoc) => {
+                    const nextStudio = {
+                      ...studioSafe,
+                      docs: (studioSafe.docs || []).map((d) =>
+                        d.id === studioSafe.meta.activeDocId ? { ...d, updatedAt: uidNow(), doc: nextDoc } : d
+                      ),
+                    };
 
-  return (
-    <div style={studioCleanWrap()}>
-      <CanvasEditorClient
-        studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
-        onChange={(nextStudio) => {
-          // CanvasEditor te manda {id, doc} o similar
-          // Nosotros persistimos SOLO el doc
-          if (nextStudio?.doc) setCanvasDoc(nextStudio.doc);
-        }}
-        compact={compact}
-      />
-    </div>
-  );
-})()}
+                    // ✅ Persistimos en proyecto
+                    updateProjectTab("studio", nextStudio);
 
+                    // ✅ SaaS Pro: persistencia inmediata por refresh
+                    if (user?.uid && activeProjectId) {
+                      saveStudioDocLS(user.uid, activeProjectId, nextDoc);
+
+                      // ✅ mini-book index (sin thumbnail real por ahora; si CanvasEditor manda previewThumb, lo guardamos)
+                      upsertStudioIndexEntry(user.uid, {
+                        id: `${activeProjectId}:${studioSafe.meta.activeDocId}`,
+                        projectId: activeProjectId,
+                        docId: studioSafe.meta.activeDocId,
+                        title: activeProject?.title || "Proyecto",
+                        meta: nextDoc?.meta || null,
+                        thumb: null, // si luego CanvasEditor te manda thumb, lo metemos aquí
+                      });
+                    }
+                  };
+
+                  return (
+                    <div style={studioCleanWrap()}>
+                      <CanvasEditorClient
+                        studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
+                        onChange={(nextStudioLike) => {
+                          if (nextStudioLike?.doc) setCanvasDoc(nextStudioLike.doc);
+                        }}
+                        compact={compact}
+                      />
+                    </div>
+                  );
+                })()}
 
               {/* CODE */}
               {activeTab === "code" && (
@@ -2423,8 +2314,9 @@ const MobileSidebarContent = SidebarContent;
                     onExportTxt={() => exportConversationTxt("code")}
                     onExportPdf={() => exportConversationPdf("code")}
                   />
-{/* ✅ Paso 3.5: Chips inline */}
-<InlineChips tabKey="code" />
+
+                  <InlineChips tabKey="code" />
+
                   <div style={inputRow()}>
                     <input
                       value={codeInput}
@@ -2447,14 +2339,13 @@ const MobileSidebarContent = SidebarContent;
               {activeTab === "excel" && (
                 <div style={{ height: "100%", overflow: "auto", paddingRight: 6 }}>
                   <div style={excelTopRow()}>
-                    <div style={{ fontWeight: 900, opacity: 0.9 }}>
-                      📄 Excel Wizard • {excelMeta?.lastOkAt ? "Listo ✅" : "—"}
-                    </div>
+                    <div style={{ fontWeight: 900, opacity: 0.9 }}>📄 Excel Wizard • {excelMeta?.lastOkAt ? "Listo ✅" : "—"}</div>
 
                     <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
                       <button style={btnGhostSmall()} onClick={resetExcelMeta} disabled={busy}>
                         Reset
                       </button>
+
                       <button
                         style={btnGhostSmall()}
                         onClick={() => {
@@ -2471,6 +2362,7 @@ const MobileSidebarContent = SidebarContent;
                       >
                         Debug Spec
                       </button>
+
                       <button
                         style={btnGhostSmall()}
                         onClick={() => {
@@ -2493,18 +2385,17 @@ const MobileSidebarContent = SidebarContent;
                     </div>
                   ) : null}
 
-                  {/* ✅ Conexión REAL: props onSubmit + onGenerateExcel */}
                   <ExcelWizardBubbles onSubmit={onWizardSubmit} onGenerateExcel={onWizardSubmit} />
 
                   <div style={excelHint()}>
-                    Tip PRO: este build genera un <b>spec determinista</b> dependiendo de tu wizard (controlType, totales y dashboard opción A).
-                    Si “se ve igual”, es porque tu backend de Excel está ignorando partes del spec. Usa “Debug Spec” y compárame.
+                    Tip PRO: este build genera un <b>spec determinista</b> dependiendo de tu wizard (controlType, totales y dashboard opción A). Si “se ve igual”, es porque tu backend de Excel está ignorando partes del spec. Usa “Debug Spec” y compárame.
                   </div>
 
                   <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button onClick={generateExcelTest} style={btnPrimary()} disabled={busy}>
                       Generar Excel (TEST)
                     </button>
+
                     <button
                       onClick={() => {
                         const spec = excelMeta?.lastSpec;
@@ -2524,7 +2415,7 @@ const MobileSidebarContent = SidebarContent;
             </div>
           </main>
 
-          {/* HUD panel */}
+          {/* HUD */}
           {hudOpen && (
             <div style={hudPanel()}>
               <div style={hudHeader()}>
@@ -2570,6 +2461,7 @@ const MobileSidebarContent = SidebarContent;
                 >
                   🧾 Export TXT (TAB)
                 </button>
+
                 <button
                   style={hudBtn()}
                   onClick={() => exportConversationPdf(activeTab === "excel" ? "chat" : activeTab)}
@@ -2577,6 +2469,7 @@ const MobileSidebarContent = SidebarContent;
                 >
                   🖨️ Export PDF (TAB)
                 </button>
+
                 <button style={hudBtn()} onClick={generateExcelTest} disabled={busy} title="Valida endpoint y descarga">
                   📄 Generar Excel (TEST)
                 </button>
@@ -2604,28 +2497,29 @@ const MobileSidebarContent = SidebarContent;
                   ✕
                 </button>
               </div>
+
               <div style={hudCard()}>
                 <div style={hudLabel()}>DEBUG</div>
                 <pre style={inspectorPre()}>
-{JSON.stringify(
-  {
-    activeProjectId,
-    activeTab,
-    busy,
-    genStatus,
-    projectsCount: projects?.length || 0,
-    pinnedInTab: pinnedMessagesForTab.length,
-    excel: {
-      endpoint: EXCEL_ENDPOINT,
-      lastOkAt: excelMeta?.lastOkAt || null,
-      lastError: excelMeta?.lastError || null,
-      lastFileName: excelMeta?.lastFileName || null,
-      hasSpec: !!excelMeta?.lastSpec,
-    },
-  },
-  null,
-  2
-)}
+                  {JSON.stringify(
+                    {
+                      activeProjectId,
+                      activeTab,
+                      busy,
+                      genStatus,
+                      projectsCount: projects?.length || 0,
+                      pinnedInTab: pinnedMessagesForTab.length,
+                      excel: {
+                        endpoint: EXCEL_ENDPOINT,
+                        lastOkAt: excelMeta?.lastOkAt || null,
+                        lastError: excelMeta?.lastError || null,
+                        lastFileName: excelMeta?.lastFileName || null,
+                        hasSpec: !!excelMeta?.lastSpec,
+                      },
+                    },
+                    null,
+                    2
+                  )}
                 </pre>
               </div>
             </div>
@@ -2689,9 +2583,7 @@ const MobileSidebarContent = SidebarContent;
                         <div style={{ fontWeight: 900, opacity: 0.9 }}>
                           {r.projectTitle} • {r.tab.toUpperCase()}
                         </div>
-                        <div style={{ fontSize: 11, opacity: 0.6 }}>
-                          {r.ts ? new Date(r.ts).toLocaleString() : ""}
-                        </div>
+                        <div style={{ fontSize: 11, opacity: 0.6 }}>{r.ts ? new Date(r.ts).toLocaleString() : ""}</div>
                       </div>
                       <div style={{ marginTop: 6, opacity: 0.85 }}>
                         <span style={{ fontWeight: 900 }}>{r.role === "user" ? "YOU: " : "AUREA: "}</span>
@@ -2711,16 +2603,14 @@ const MobileSidebarContent = SidebarContent;
         {paletteOpen && (
           <Modal onClose={() => setPaletteOpen(false)} title="Command Palette">
             <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ opacity: 0.75 }}>
-                Acciones rápidas. Tip: usa esto como “control central” del producto.
-              </div>
+              <div style={{ opacity: 0.75 }}>Acciones rápidas. Tip: usa esto como “control central” del producto.</div>
 
               <div style={cmdGrid()}>
                 <CmdBtn
                   label="Ir a Chat"
                   hint="Switch tab"
                   onClick={() => {
-                    setActiveTab("chat");
+                    setTab("chat");
                     setPaletteOpen(false);
                     toast("Tab", "Chat", "ok");
                   }}
@@ -2729,7 +2619,7 @@ const MobileSidebarContent = SidebarContent;
                   label="Ir a Images"
                   hint="Switch tab"
                   onClick={() => {
-                    setActiveTab("images");
+                    setTab("images");
                     setPaletteOpen(false);
                     toast("Tab", "Images", "ok");
                   }}
@@ -2738,16 +2628,25 @@ const MobileSidebarContent = SidebarContent;
                   label="Ir a Code"
                   hint="Switch tab"
                   onClick={() => {
-                    setActiveTab("code");
+                    setTab("code");
                     setPaletteOpen(false);
                     toast("Tab", "Code", "ok");
+                  }}
+                />
+                <CmdBtn
+                  label="Ir a Studio"
+                  hint="Switch tab"
+                  onClick={() => {
+                    setTab("studio");
+                    setPaletteOpen(false);
+                    toast("Tab", "Studio", "ok");
                   }}
                 />
                 <CmdBtn
                   label="Ir a Excel"
                   hint="Switch tab"
                   onClick={() => {
-                    setActiveTab("excel");
+                    setTab("excel");
                     setPaletteOpen(false);
                     toast("Tab", "Excel", "ok");
                   }}
@@ -2923,18 +2822,10 @@ function CmdBtn({ label, hint, onClick, danger }) {
 }
 
 /* ----------------------------- Styles (inline) ----------------------------- */
-/* (Todo igual que tu archivo; NO toqué nada fuera del bloque EXCEL) */
 
 function inlineChipsRow() {
-  return {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    padding: "8px 2px 2px",
-    marginTop: 6,
-  };
+  return { display: "flex", gap: 8, flexWrap: "wrap", padding: "8px 2px 2px", marginTop: 6 };
 }
-
 function inlineChipBtn() {
   return {
     padding: "7px 10px",
@@ -2949,22 +2840,19 @@ function inlineChipBtn() {
   };
 }
 
-
 function page() {
   return {
-    height: "100dvh",          // 👈 en vez de minHeight
+    height: "100dvh",
     background: "var(--bg)",
     color: "var(--text)",
     fontSize: 12,
     lineHeight: 1.35,
     letterSpacing: 0.2,
-    overflow: "hidden",        // 👈 bloquea scroll global
-    display: "flex",           // 👈 CLAVE
-    flexDirection: "column",   // 👈 CLAVE
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
   };
 }
-
-
 
 function ambientGrid() {
   return {
@@ -3008,8 +2896,6 @@ function topbar() {
   };
 }
 
-
-
 function chip() {
   return {
     display: "inline-flex",
@@ -3029,238 +2915,197 @@ function chipSoft() {
     alignItems: "center",
     padding: "4px 10px",
     borderRadius: 999,
-    border: "1px solid var(--border)",
-    background: "var(--panel)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
     color: "var(--text)",
-    fontWeight: 800,
-  };
-}
-
-
-function logoCircle() {
-  return {
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    display: "grid",
-    placeItems: "center",
-    background: "rgba(247,198,0,0.14)",
-    border: "1px solid rgba(247,198,0,0.35)",
     fontWeight: 900,
-    color: "#f7c600",
-    boxShadow: "0 0 22px rgba(247,198,0,0.16)",
+    opacity: 0.92,
   };
 }
 
-function layout(compact, rightOpen) {
-  const left = compact ? 290 : 320;
-  const right = compact ? 320 : 340;
+/* ----------------------------- Layout styles ----------------------------- */
 
+function layout(compact, rightPanelsOpen) {
   return {
+    flex: 1,
     display: "grid",
-    gridTemplateColumns: rightOpen ? `${left}px 1fr ${right}px` : `${left}px 1fr`,
+    gridTemplateColumns: rightPanelsOpen
+      ? "300px 1fr 320px"
+      : "300px 1fr",
     gap: 14,
-    padding: 14,
-
-    width: "100%",
-    flex: 1,            // 👈 CLAVE: ocupa el resto debajo del topbar
-    minHeight: 0,       // 👈 CLAVE: permite que los hijos scrolleen bien
-    overflow: "hidden", // 👈 sin scroll externo
+    padding: compact ? 12 : 16,
     alignItems: "stretch",
+    minHeight: 0,
   };
 }
-
-
 
 function sidebar() {
   return {
-    background: "var(--panel)",
     border: "1px solid var(--border)",
-    borderRadius: 16,
+    background: "var(--panel)",
+    borderRadius: 18,
+    boxShadow: "var(--shadow-soft)",
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
     minHeight: 0,
-    backdropFilter: "var(--blur)",
   };
 }
 
 function sidebarHeader() {
   return {
-    padding: 14,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    padding: "14px 14px 10px",
+    borderBottom: "1px solid var(--border)",
+    background:
+      "linear-gradient(180deg, var(--surface-2), transparent)",
   };
 }
 
 function sidebarActions() {
   return {
-    padding: 12,
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--border)",
   };
 }
 
 function metricsWrap() {
   return {
-    padding: 12,
+    padding: "10px 14px",
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 10,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid var(--border)",
   };
 }
 
-function metricCard(variant) {
-  const base = {
-    padding: 10,
+function metricCard(kind) {
+  const ok = kind === "ok";
+  const err = kind === "err";
+  return {
+    border: "1px solid var(--stroke-soft)",
+    background: ok
+      ? "linear-gradient(180deg, var(--green-soft), var(--surface-2))"
+      : err
+      ? "linear-gradient(180deg, var(--red-soft), var(--surface-2))"
+      : "var(--surface-2)",
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.08)",
-background: "var(--surface-2)",
+    padding: 10,
+    boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
   };
-  if (variant === "ok") {
-    base.border = "1px solid rgba(60,220,130,0.28)";
-    base.background = "rgba(60,220,130,0.10)";
-  }
-  if (variant === "err") {
-    base.border = "1px solid rgba(255,80,80,0.28)";
-    base.background = "rgba(255,80,80,0.10)";
-  }
-  return base;
 }
-
-function metricCardWide(variant) {
-  const base = metricCard(variant);
-  return { ...base, gridColumn: "span 2" };
+function metricCardWide(kind) {
+  return {
+    gridColumn: "1 / -1",
+    ...metricCard(kind),
+  };
 }
-
 function metricLabel() {
-  return { fontSize: 11, opacity: 0.7, fontWeight: 900 };
+  return { fontSize: 11, opacity: 0.72, fontWeight: 900 };
 }
 function metricValue() {
-  return { fontSize: 18, fontWeight: 900, marginTop: 2 };
+  return { fontSize: 18, fontWeight: 900, marginTop: 4 };
 }
 function metricValueSmall() {
-  return { fontSize: 12, fontWeight: 900, marginTop: 4, opacity: 0.92 };
+  return { fontSize: 12, fontWeight: 900, marginTop: 6, opacity: 0.85 };
 }
 
 function miniTabsRow() {
   return {
-    padding: "10px 12px",
     display: "flex",
-    gap: 8,
     flexWrap: "wrap",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    gap: 8,
+    padding: "10px 14px",
+    borderBottom: "1px solid var(--border)",
   };
 }
-
 function miniTabPill(active) {
   return {
-    padding: "6px 10px",
+    padding: "7px 10px",
     borderRadius: 999,
-    cursor: "pointer",
-    border: active ? "1px solid rgba(247,198,0,0.55)" : "1px solid rgba(255,255,255,0.10)",
-    background: active ? "rgba(247,198,0,0.10)" : "rgba(255,255,255,0.03)",
+    border: "1px solid var(--stroke-soft)",
+    background: active ? "rgba(247,198,0,0.10)" : "var(--surface-2)",
+    color: active ? "var(--gold)" : "var(--text)",
     fontWeight: 900,
-    fontSize: 12,
+    cursor: "pointer",
     userSelect: "none",
   };
 }
 
 function projectList() {
   return {
-    padding: 12,
-    display: "grid",
-    gap: 10,
+    padding: "10px 12px 14px",
     overflow: "auto",
     minHeight: 0,
   };
 }
-
 function projectItem(active) {
   return {
     position: "relative",
-    padding: "10px 10px 10px 12px",
+    border: `1px solid ${active ? "rgba(247,198,0,0.26)" : "var(--stroke-soft)"}`,
+    background: active
+      ? "linear-gradient(180deg, rgba(247,198,0,0.10), var(--surface-2))"
+      : "var(--surface-2)",
     borderRadius: 14,
-    border: active ? "1px solid rgba(247,198,0,0.7)" : "1px solid rgba(255,255,255,0.06)",
-    background: active ? "rgba(247,198,0,0.08)" : "rgba(255,255,255,0.02)",
+    padding: "10px 10px",
+    marginBottom: 10,
     cursor: "pointer",
-    boxShadow: active ? "0 0 26px rgba(247,198,0,0.08)" : "none",
-    transition: "transform .12s ease",
+    boxShadow: active ? "0 14px 40px rgba(0,0,0,0.25)" : "0 10px 26px rgba(0,0,0,0.18)",
   };
 }
-
 function projectTitle() {
-  return {
-    fontWeight: 900,
-    fontSize: 12,
-    maxWidth: 230,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  };
+  return { fontWeight: 900, opacity: 0.95, paddingRight: 76 };
 }
-
 function projectSub() {
-  return {
-    fontSize: 11,
-    opacity: 0.6,
-    marginTop: 3,
-  };
+  return { fontSize: 11, opacity: 0.65, marginTop: 4, paddingRight: 76 };
 }
-
 function miniPill() {
   return {
     position: "absolute",
-    top: 8,
-    right: 38,
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "transparent",
-    color: "#fff",
+    top: 10,
+    right: 44,
+    width: 30,
+    height: 28,
+    borderRadius: 10,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
-    fontSize: 11,
-    padding: "4px 7px",
-    opacity: 0.9,
   };
 }
-
 function miniPillDots(active) {
   return {
     position: "absolute",
-    top: 8,
-    right: 8,
-    borderRadius: 999,
-    border: active ? "1px solid rgba(247,198,0,0.35)" : "1px solid rgba(255,255,255,0.12)",
-    background: active ? "rgba(247,198,0,0.08)" : "transparent",
-    color: "#fff",
+    top: 10,
+    right: 10,
+    width: 30,
+    height: 28,
+    borderRadius: 10,
+    border: `1px solid ${active ? "rgba(247,198,0,0.26)" : "var(--stroke-soft)"}`,
+    background: active ? "rgba(247,198,0,0.10)" : "var(--surface-3)",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
-    fontSize: 14,
-    padding: "2px 8px",
-    opacity: 0.95,
-    lineHeight: "18px",
   };
 }
 
 function menuPanel() {
   return {
     position: "absolute",
-    top: 34,
-    right: 8,
-    width: 210,
-    zIndex: 50,
+    top: 42,
+    right: 10,
+    width: 220,
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(10,10,12,0.92)",
-    backdropFilter: "blur(10px)",
+    border: "1px solid var(--stroke-hard)",
+    background: "var(--panel)",
+    boxShadow: "var(--shadow-hard)",
     overflow: "hidden",
-    boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
+    zIndex: 20,
   };
 }
-
 function menuItem() {
   return {
     width: "100%",
@@ -3271,521 +3116,193 @@ function menuItem() {
     color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
-    fontSize: 12,
-    borderBottom: "1px solid var(--border)",
+    opacity: 0.92,
   };
 }
-
-
 function menuItemDanger() {
-  return {
-    width: "100%",
-    textAlign: "left",
-    padding: "10px 12px",
-    border: "none",
-    background: "rgba(255,80,80,0.10)",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-  };
+  return { ...menuItem(), color: "#ff6b6b" };
 }
-
 function menuSep() {
-  return { height: 1, background: "rgba(255,255,255,0.06)" };
+  return { height: 1, background: "var(--border)" };
 }
 
 function mainCard() {
   return {
-    background: "var(--panel)",
     border: "1px solid var(--border)",
-    borderRadius: 16,
+    background: "var(--panel)",
+    borderRadius: 18,
+    boxShadow: "var(--shadow-soft)",
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
     minHeight: 0,
-
-    // ✅ CLAVE para grid layouts
-    minWidth: 0,
-
-    backdropFilter: "var(--blur)",
   };
 }
-
 
 function tabsBar() {
   return {
     display: "flex",
-    gap: 10,
-    padding: 14,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
     alignItems: "center",
+    gap: 8,
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--border)",
+    background:
+      "linear-gradient(180deg, var(--surface-2), transparent)",
   };
 }
-
 function tabBtn(active) {
   return {
-    padding: "8px 12px",
-    borderRadius: 999,
-    border: "1px solid var(--border)",
-    background: active ? "var(--gold)" : "transparent",
-    color: active ? "#111" : "var(--text)",
+    padding: "9px 12px",
+    borderRadius: 12,
+    border: `1px solid ${active ? "rgba(247,198,0,0.26)" : "var(--stroke-soft)"}`,
+    background: active ? "rgba(247,198,0,0.12)" : "var(--surface-2)",
+    color: active ? "var(--gold)" : "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
-    fontSize: 12,
+    opacity: active ? 1 : 0.9,
   };
 }
-
 
 function statusPill(kind) {
   const base = {
     padding: "6px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
+    border: "1px solid var(--stroke-soft)",
     fontWeight: 900,
-    fontSize: 12,
+    fontSize: 11,
+    letterSpacing: 0.4,
   };
-  if (kind === "busy") {
-    base.border = "1px solid rgba(247,198,0,0.25)";
-    base.background = "rgba(247,198,0,0.10)";
-    base.color = "#f7c600";
-  }
-  if (kind === "ok") {
-    base.border = "1px solid rgba(60,220,130,0.25)";
-    base.background = "rgba(60,220,130,0.10)";
-    base.color = "#b6ffcf";
-  }
-  return base;
+  if (kind === "busy") return { ...base, background: "rgba(47,107,255,0.12)", color: "var(--text)" };
+  if (kind === "ok") return { ...base, background: "rgba(16,185,129,0.10)", color: "var(--text)" };
+  return { ...base, background: "var(--surface-2)", color: "var(--text)", opacity: 0.9 };
 }
 
 function banner() {
   return {
-    padding: "10px 14px",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
-    fontSize: 12,
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--border)",
+    background: "var(--surface-2)",
     opacity: 0.92,
+    fontWeight: 900,
   };
 }
 
 function mainBody() {
   return {
-    padding: 14,
+    flex: 1,
+    minHeight: 0,
+    padding: 12,
+    overflow: "hidden",
     display: "flex",
     flexDirection: "column",
-    gap: 12,
-    minHeight: 0,
-    height: "100%",
-
-    // ✅ CLAVE
-    minWidth: 0,
+    gap: 10,
   };
 }
 
-
-function statusLine() {
-  return { fontSize: 12, opacity: 0.95, fontWeight: 900, color: "#f7c600" };
-}
-function statusSpacer() {
-  return { height: 18 };
-}
-
-function chatArea(compact) {
-  return {
-    flex: 1,
-    minHeight: 0,
-    overflow: "auto",
-    display: "grid",
-    gap: compact ? 10 : 12,
-    padding: 8,
-    borderRadius: 14,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.03)",
-  };
-}
-
-function studioCleanWrap() {
-  return {
-    flex: 1,
-    minHeight: 0,
-    height: "100%",
-    width: "100%",
-    overflow: "hidden",
-    borderRadius: 0,      // ✅ sin “recuadro”
-    border: "none",       // ✅ sin “recuadro”
-    background: "transparent",
-    padding: 0,
-    margin: 0,
-  };
-}
-
-
-
+/* ----------------------------- Pins ----------------------------- */
 function pinsWrap() {
   return {
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(255,255,255,0.02)",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    borderRadius: 16,
+    padding: 10,
   };
 }
-
 function pinsRow() {
-  return { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 };
+  return { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 };
 }
-
 function pinChip() {
   return {
-    padding: "6px 10px",
+    padding: "7px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(247,198,0,0.22)",
-    background: "rgba(247,198,0,0.10)",
-    color: "#fff",
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
     cursor: "pointer",
     fontWeight: 900,
-    fontSize: 12,
-    maxWidth: 360,
+    maxWidth: 340,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   };
 }
 
-function quickRow() {
+/* ----------------------------- Chat area + Inputs ----------------------------- */
+function chatArea(compact) {
   return {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    padding: "8px 8px",
-    borderRadius: 14,
+    flex: 1,
+    minHeight: 0,
+    overflow: "auto",
+    padding: compact ? 8 : 10,
     border: "1px solid var(--stroke-soft)",
+    borderRadius: 16,
     background: "var(--surface-2)",
+    display: "grid",
+    gap: 10,
   };
 }
-
-function quickBtn() {
-  return {
-    padding: "8px 10px",
-    borderRadius: 999,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-3)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-  };
-}
-
-
 function inputRow() {
-  return { display: "flex", gap: 10, marginTop: 2 };
+  return { display: "flex", gap: 10, alignItems: "center" };
 }
-
-function badge(type) {
-  const base = {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "3px 8px",
-    borderRadius: 999,
-    fontWeight: 900,
-    fontSize: 11,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.03)",
-  };
-  if (type === "assistant") {
-    base.border = "1px solid rgba(247,198,0,0.25)";
-    base.background = "rgba(247,198,0,0.10)";
-    base.color = "#f7c600";
-  }
-  if (type === "user") {
-    base.border = "1px solid rgba(47,107,255,0.25)";
-    base.background = "rgba(47,107,255,0.14)";
-    base.color = "#cfe1ff";
-  }
-  return base;
-}
-
-function bubble(isUser, compact) {
-  return {
-    maxWidth: 980,
-    padding: compact ? 10 : 12,
-    borderRadius: 14,
-    background: isUser ? "var(--blue)" : "var(--surface-1)",
-    border: "1px solid var(--stroke-soft)",
-    boxShadow: isUser ? "0 0 26px rgba(47,107,255,0.18)" : "var(--shadow-soft)",
-    fontSize: 12,
-    color: isUser ? "#fff" : "var(--text)",
-  };
-}
-
-
-function typingDots() {
-  return {
-    display: "inline-block",
-    width: 34,
-    height: 10,
-    background: "linear-gradient(90deg, rgba(247,198,0,0.0), rgba(247,198,0,0.8), rgba(247,198,0,0.0))",
-    borderRadius: 999,
-    animation: "aureaPulse 1.1s ease-in-out infinite",
-  };
-}
-
-function pinBtn(active) {
-  return {
-    borderRadius: 10,
-    border: active ? "1px solid rgba(247,198,0,0.35)" : "1px solid rgba(255,255,255,0.12)",
-    background: active ? "rgba(247,198,0,0.12)" : "rgba(0,0,0,0.20)",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-    padding: "4px 8px",
-  };
-}
-
-function miniIconBtn() {
-  return {
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(0,0,0,0.20)",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-    padding: "4px 8px",
-    opacity: 0.9,
-  };
-}
-
 function input() {
   return {
     flex: 1,
     padding: "12px 12px",
-    borderRadius: 12,
-    border: "1px solid var(--border)",
-    background: "var(--panel2)",
-    color: "var(--text)",
-    outline: "none",
-    fontSize: 12,
-  };
-}
-
-
-function btnPrimary() {
-  return {
-    padding: "12px 14px",
-    borderRadius: 12,
-    border: "none",
-    background: "#f7c600",
-color: "#111",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontSize: 12,
-  };
-}
-
-function btnGhost() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 999,
-    border: "1px solid var(--border)",
-    background: "transparent",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-  };
-}
-
-
-function btnDanger() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,80,80,0.25)",
-    background: "rgba(255,80,80,0.12)",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-  };
-}
-
-function btnGhostSmall() {
-  return {
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid var(--border)",
-    background: "transparent",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 12,
-  };
-}
-
-
-function btnGhostLink() {
-  return {
-    display: "inline-block",
-    padding: "8px 12px",
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.14)",
-    color: "#fff",
-    textDecoration: "none",
-    fontWeight: 900,
-    fontSize: 12,
-  };
-}
-
-function btnPrimaryLink() {
-  return {
-    display: "inline-block",
-    padding: "8px 12px",
-    borderRadius: 10,
-    background: "#f7c600",
-    color: "#111",
-    textDecoration: "none",
-    fontWeight: 900,
-    fontSize: 12,
-  };
-}
-
-
-/* ----------------------------- HUD / Inspector Panels ----------------------------- */
-
-function hudPanel() {
-  return {
-    background: "var(--surface-1)",
-    border: "1px solid var(--stroke-soft)",
-    borderRadius: 16,
-    overflow: "hidden",
-    minHeight: 0,
-    display: "flex",
-    flexDirection: "column",
-    backdropFilter: "var(--blur)",
-    boxShadow: "var(--shadow-soft)",
-  };
-}
-
-function inspectorPanel() {
-  return hudPanel();
-}
-
-function hudHeader() {
-  return {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 12,
-    borderBottom: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-  };
-}
-
-function hudClose() {
-  return {
+    borderRadius: 14,
     border: "1px solid var(--stroke-soft)",
     background: "var(--surface-3)",
     color: "var(--text)",
-    borderRadius: 10,
-    cursor: "pointer",
-    padding: "6px 10px",
-    fontWeight: 950,
-    fontSize: 12,
+    outline: "none",
+    fontWeight: 700,
   };
 }
-
-function hudCard() {
+function statusLine() {
   return {
-    margin: 12,
-    marginTop: 0,
-    padding: 12,
-    borderRadius: 14,
-    border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.04)",
-  };
-}
-
-function hudLabel() {
-  return { fontSize: 11, opacity: 0.7, fontWeight: 950, marginBottom: 6, color: "var(--text)" };
-}
-
-function hudText() {
-  return { fontSize: 12, opacity: 0.92, marginBottom: 4, color: "var(--text)" };
-}
-
-function hudBtn() {
-  return {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid var(--gold-stroke)",
-    background: "var(--gold-soft)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 950,
-    fontSize: 12,
-    marginTop: 8,
-  };
-}
-
-function hudBtnSoft() {
-  return {
-    width: "100%",
-    padding: "10px 12px",
+    padding: "8px 10px",
     borderRadius: 12,
     border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 950,
-    fontSize: 12,
-    marginTop: 8,
+    background: "rgba(47,107,255,0.08)",
+    fontWeight: 900,
   };
 }
+function statusSpacer() {
+  return { height: 0 };
+}
 
-function inspectorPre() {
+/* ----------------------------- Studio wrapper ----------------------------- */
+function studioCleanWrap() {
   return {
-    margin: 0,
-    fontSize: 11,
-    opacity: 0.9,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    color: "var(--text)",
+    height: "100%",
+    minHeight: 0,
+    overflow: "hidden",
+    border: "1px solid var(--stroke-soft)",
+    borderRadius: 16,
+    background: "var(--surface-2)",
   };
 }
 
-
-/* ----------------------------- Excel UI helpers ----------------------------- */
-
+/* ----------------------------- Excel ----------------------------- */
 function excelTopRow() {
   return {
     display: "flex",
-    gap: 10,
     alignItems: "center",
-    padding: "8px 10px",
-    borderRadius: 14,
+    gap: 10,
     border: "1px solid var(--stroke-soft)",
     background: "var(--surface-2)",
-    marginBottom: 10,
+    borderRadius: 16,
+    padding: "10px 12px",
   };
 }
-
 function excelError() {
   return {
+    marginTop: 10,
     padding: "10px 12px",
     borderRadius: 14,
-    border: "1px solid rgba(255,80,80,0.25)",
-    background: "rgba(255,80,80,0.10)",
+    border: "1px solid rgba(239,68,68,0.35)",
+    background: "rgba(239,68,68,0.10)",
     fontWeight: 900,
-    fontSize: 12,
-    marginBottom: 10,
   };
 }
-
 function excelHint() {
   return {
     marginTop: 10,
@@ -3793,85 +3310,188 @@ function excelHint() {
     borderRadius: 14,
     border: "1px solid var(--stroke-soft)",
     background: "var(--surface-2)",
-    fontSize: 12,
-    opacity: 0.92,
-    color: "var(--text)",
+    opacity: 0.9,
   };
 }
 
-/* ----------------------------- Modal / Palette / Search ----------------------------- */
+/* ----------------------------- HUD / Inspector ----------------------------- */
+function hudPanel() {
+  return {
+    border: "1px solid var(--border)",
+    background: "var(--panel)",
+    borderRadius: 18,
+    boxShadow: "var(--shadow-soft)",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
+  };
+}
+function inspectorPanel() {
+  return hudPanel();
+}
+function hudHeader() {
+  return {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--border)",
+    background: "var(--surface-2)",
+  };
+}
+function hudClose() {
+  return {
+    padding: "7px 10px",
+    borderRadius: 12,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-3)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+  };
+}
+function hudCard() {
+  return {
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--border)",
+  };
+}
+function hudLabel() {
+  return { fontSize: 11, opacity: 0.6, fontWeight: 900, letterSpacing: 0.6 };
+}
+function hudText() {
+  return { marginTop: 6, opacity: 0.9 };
+}
+function hudBtn() {
+  return {
+    width: "100%",
+    marginTop: 10,
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(247,198,0,0.26)",
+    background: "rgba(247,198,0,0.10)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+    textAlign: "left",
+  };
+}
+function hudBtnSoft() {
+  return {
+    ...hudBtn(),
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+  };
+}
+function inspectorPre() {
+  return {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 14,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    overflow: "auto",
+    maxHeight: 420,
+    fontSize: 11,
+  };
+}
 
+/* ----------------------------- Toasts ----------------------------- */
+function toastStack() {
+  return {
+    position: "fixed",
+    right: 16,
+    bottom: 16,
+    display: "grid",
+    gap: 10,
+    zIndex: 80,
+    pointerEvents: "none",
+  };
+}
+function toastCard(kind) {
+  const base = {
+    width: 320,
+    padding: "10px 12px",
+    borderRadius: 16,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--panel)",
+    boxShadow: "var(--shadow-soft)",
+    pointerEvents: "auto",
+  };
+  if (kind === "error") return { ...base, border: "1px solid rgba(239,68,68,0.35)" };
+  if (kind === "warn") return { ...base, border: "1px solid rgba(247,198,0,0.35)" };
+  return base;
+}
+
+/* ----------------------------- Modals ----------------------------- */
 function modalOverlay() {
   return {
     position: "fixed",
     inset: 0,
-    zIndex: 80,
-    background: "rgba(2,6,23,0.55)",
-    backdropFilter: "blur(8px)",
+    background: "rgba(0,0,0,0.62)",
+    backdropFilter: "blur(10px)",
+    zIndex: 70,
     display: "grid",
     placeItems: "center",
-    padding: 18,
+    padding: 14,
   };
 }
-
 function modalCard() {
   return {
-    width: "min(860px, 100%)",
-    borderRadius: 16,
-    border: "1px solid var(--stroke-soft)",
+    width: "min(900px, 96vw)",
+    maxHeight: "86vh",
+    borderRadius: 18,
+    border: "1px solid var(--stroke-hard)",
     background: "var(--panel)",
     boxShadow: "var(--shadow-hard)",
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
   };
 }
-
 function modalHeader() {
   return {
-    padding: 12,
-    borderBottom: "1px solid var(--stroke-soft)",
     display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--border)",
     background: "var(--surface-2)",
   };
 }
-
 function modalBody() {
-  return { padding: 12, background: "var(--panel)" };
+  return { padding: 12, overflow: "auto" };
 }
-
 function modalInput() {
   return {
-    flex: 1,
+    width: "100%",
     padding: "12px 12px",
-    borderRadius: 12,
+    borderRadius: 14,
     border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-2)",
+    background: "var(--surface-3)",
     color: "var(--text)",
     outline: "none",
-    fontWeight: 900,
-    boxShadow: "inset 0 0 0 1px rgba(247,198,0,0.04)",
+    fontWeight: 800,
   };
 }
 
 function searchItem() {
   return {
     padding: "10px 12px",
-    borderRadius: 12,
+    borderRadius: 14,
     border: "1px solid var(--stroke-soft)",
-    background: "var(--surface-1)",
+    background: "var(--surface-2)",
     color: "var(--text)",
     cursor: "pointer",
+    fontWeight: 900,
     textAlign: "left",
-    fontWeight: 950,
-    boxShadow: "var(--shadow-soft)",
   };
 }
-
 function searchMsgItem() {
   return {
     padding: "10px 12px",
-    borderRadius: 12,
+    borderRadius: 14,
     border: "1px solid var(--stroke-soft)",
     background: "var(--surface-2)",
     color: "var(--text)",
@@ -3880,54 +3500,159 @@ function searchMsgItem() {
   };
 }
 
+/* ----------------------------- Command palette ----------------------------- */
 function cmdGrid() {
-  return { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
+  return {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 10,
+    marginTop: 12,
+  };
 }
-
 function cmdBtn(danger) {
   return {
-    padding: 12,
-    borderRadius: 14,
-    border: danger ? "1px solid rgba(239,68,68,0.28)" : "1px solid var(--stroke-soft)",
-    background: danger ? "var(--red-soft)" : "var(--surface-2)",
+    padding: "12px 12px",
+    borderRadius: 16,
+    border: `1px solid ${danger ? "rgba(239,68,68,0.35)" : "var(--stroke-soft)"}`,
+    background: danger ? "rgba(239,68,68,0.10)" : "var(--surface-2)",
     color: "var(--text)",
     cursor: "pointer",
     textAlign: "left",
+    fontWeight: 900,
   };
 }
 
-/* ----------------------------- Toasts ----------------------------- */
-
-function toastStack() {
+/* ----------------------------- QuickActions ----------------------------- */
+function quickRow() {
   return {
-    position: "fixed",
-    right: 14,
-    bottom: 14,
-    zIndex: 90,
-    display: "grid",
-    gap: 10,
-    width: 320,
-    pointerEvents: "none",
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    padding: "6px 2px 2px",
+    alignItems: "center",
   };
 }
-
-function toastCard(kind) {
-  const base = {
-    padding: 12,
+function quickBtn() {
+  return {
+    padding: "8px 10px",
     borderRadius: 14,
     border: "1px solid var(--stroke-soft)",
-    background: "var(--panel)",
-    boxShadow: "var(--shadow-hard)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+    opacity: 0.95,
   };
-
-  if (kind === "ok") base.border = "1px solid rgba(16,185,129,0.30)";
-  if (kind === "warn") base.border = "1px solid var(--gold-stroke)";
-  if (kind === "error") base.border = "1px solid rgba(239,68,68,0.32)";
-
-  return base;
 }
 
+/* ----------------------------- Message bubble ----------------------------- */
+function badge(kind) {
+  const base = {
+    fontSize: 10,
+    fontWeight: 900,
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: "1px solid var(--stroke-soft)",
+  };
+  if (kind === "assistant") return { ...base, background: "rgba(47,107,255,0.10)" };
+  return { ...base, background: "rgba(247,198,0,0.10)", color: "var(--gold)" };
+}
+function bubble(isUser, compact) {
+  return {
+    width: "min(860px, 92%)",
+    borderRadius: 18,
+    border: "1px solid var(--stroke-soft)",
+    background: isUser ? "rgba(247,198,0,0.10)" : "var(--surface-3)",
+    padding: compact ? "10px 10px" : "12px 12px",
+    boxShadow: "0 10px 26px rgba(0,0,0,0.18)",
+  };
+}
+function typingDots() {
+  return {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    background: "rgba(247,198,0,0.18)",
+    animation: "aureaPulse 1.1s infinite ease-in-out",
+    display: "inline-block",
+  };
+}
+function miniIconBtn() {
+  return {
+    width: 28,
+    height: 26,
+    borderRadius: 10,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+  };
+}
+function pinBtn(pinned) {
+  return {
+    ...miniIconBtn(),
+    border: pinned ? "1px solid rgba(247,198,0,0.35)" : "1px solid var(--stroke-soft)",
+    background: pinned ? "rgba(247,198,0,0.10)" : "var(--surface-2)",
+  };
+}
 
-export async function getServerSideProps() {
-  return { props: {} };
+/* ----------------------------- Buttons ----------------------------- */
+function btnGhost() {
+  return {
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid var(--stroke-soft)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+    opacity: 0.95,
+  };
+}
+function btnGhostSmall() {
+  return { ...btnGhost(), padding: "8px 10px", borderRadius: 12, fontSize: 12 };
+}
+function btnPrimary() {
+  return {
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(247,198,0,0.30)",
+    background: "rgba(247,198,0,0.14)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+  };
+}
+function btnDanger() {
+  return {
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(239,68,68,0.35)",
+    background: "rgba(239,68,68,0.12)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+  };
+}
+function btnGhostLink() {
+  return {
+    ...btnGhostSmall(),
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
+  };
+}
+function btnPrimaryLink() {
+  return {
+    ...btnPrimary(),
+    padding: "8px 10px",
+    borderRadius: 12,
+    fontSize: 12,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textDecoration: "none",
+  };
 }
