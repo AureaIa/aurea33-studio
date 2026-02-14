@@ -2274,44 +2274,46 @@ const MobileSidebarContent = SidebarContent;
 
 
           {/* Content */}
-          <main style={mainCard()}>
-            <main
-  style={{
-    flex: 1,
-    minWidth: 0,
-    minHeight: 0,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  }}
-></main>
-            {/* Tabs */}
-            <div style={tabsBar()}>
-              {TABS.map((t) => (
-                <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(activeTab === t.key)}>
 
-                  {t.title}
-                </button>
-              ))}
+<main style={mainCard()}>
+  <div
+    style={{
+      flex: 1,
+      minWidth: 0,
+      minHeight: 0,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+    }}
+  >
+    {/* Tabs */}
+    <div style={tabsBar()}>
+      {TABS.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => setTab(t.key)}
+          style={tabBtn(activeTab === t.key)}
+        >
+          {t.title}
+        </button>
+      ))}
 
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={statusPill(busy ? "busy" : "idle")}>
-                  {busy ? "PROCESSING" : `IDLE • ${activeTab.toUpperCase()}`}
-                </span>
-                <span style={statusPill("ok")}>Listo ✅</span>
-              </div>
-            </div>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={statusPill(busy ? "busy" : "idle")}>
+          {busy ? "PROCESSING" : `IDLE • ${activeTab.toUpperCase()}`}
+        </span>
+        <span style={statusPill("ok")}>Listo ✅</span>
+      </div>
+    </div>
 
-            {/* Banner */}
-            <div style={banner()}>
-              {activeTab === "images" && "🖼️ Imágenes listo. Describe y genero. (Images backend intacto)."}
-              {activeTab === "chat" && "💬 Chat AUREA conectado. Historial por proyecto."}
-              {activeTab === "code" && "🧠 Código conectado. Historial por proyecto."}
-              {activeTab === "excel" && "📄 Excel Wizard activo (con descarga conectada + spec PRO)."}
-              {activeTab === "studio" && "🎛️ AUREA STUDIO activo. Canvas persistente por proyecto."}
-
-            </div>
-
+    {/* Banner */}
+    <div style={banner()}>
+      {activeTab === "images" && "🖼️ Imágenes listo. Describe y genero. (Images backend intacto)."}
+      {activeTab === "chat" && "💬 Chat AUREA conectado. Historial por proyecto."}
+      {activeTab === "code" && "🧠 Código conectado. Historial por proyecto."}
+      {activeTab === "excel" && "📄 Excel Wizard activo (con descarga conectada + spec PRO)."}
+      {activeTab === "studio" && "🎛️ AUREA STUDIO activo. Canvas persistente por proyecto."}
+    </div>
             {/* Body */}
             <div style={mainBody()}>
               {/* Pins */}
@@ -2694,8 +2696,9 @@ const MobileSidebarContent = SidebarContent;
                   </div>
                 </div>
               )}
-            </div>
-          </main>
+               </div> {/* ← cierra mainBody */}
+          </div>   {/* ← cierra el wrapper flex */}
+        </main>
 
           {/* HUD panel */}
           {hudOpen && (
