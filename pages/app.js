@@ -226,6 +226,16 @@ function copyToClipboard(text) {
 
 function useIsMobile(breakpoint = 900) {
   const [isMobile, setIsMobile] = useState(false);
+const [leftCollapsed, setLeftCollapsed] = useState(false);
+useEffect(() => {
+  const v = localStorage.getItem("aurea33:leftCollapsed");
+  if (v != null) setLeftCollapsed(v === "1");
+}, []);
+
+useEffect(() => {
+  localStorage.setItem("aurea33:leftCollapsed", leftCollapsed ? "1" : "0");
+}, [leftCollapsed]);
+
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2144,6 +2154,16 @@ const MobileSidebarContent = SidebarContent;
         <div style={topbar()}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={logoCircle()}>A</div>
+             {/* LEFT SIDEBAR */}
+  <aside style={leftSidebarStyle(leftCollapsed)}>
+    {/* header + botón collapse */}
+  </aside>
+
+  {/* MAIN ALWAYS ON */}
+  <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+    {/* TOP BAR + TABS + CONTENT */}
+  </main>
+
             <div>
               <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
                 AUREA 33 STUDIO // LIVE
