@@ -226,16 +226,6 @@ function copyToClipboard(text) {
 
 function useIsMobile(breakpoint = 900) {
   const [isMobile, setIsMobile] = useState(false);
-const [leftCollapsed, setLeftCollapsed] = useState(false);
-useEffect(() => {
-  const v = localStorage.getItem("aurea33:leftCollapsed");
-  if (v != null) setLeftCollapsed(v === "1");
-}, []);
-
-useEffect(() => {
-  localStorage.setItem("aurea33:leftCollapsed", leftCollapsed ? "1" : "0");
-}, [leftCollapsed]);
-
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -245,7 +235,6 @@ useEffect(() => {
     const apply = () => setIsMobile(!!mq.matches);
     apply();
 
-    // compat Safari/old
     if (mq.addEventListener) mq.addEventListener("change", apply);
     else mq.addListener(apply);
 
@@ -257,6 +246,7 @@ useEffect(() => {
 
   return isMobile;
 }
+
 
 function makeStudioDoc(title = "Doc 1") {
   const id = makeId();
@@ -2154,15 +2144,7 @@ const MobileSidebarContent = SidebarContent;
         <div style={topbar()}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={logoCircle()}>A</div>
-             {/* LEFT SIDEBAR */}
-  <aside style={leftSidebarStyle(leftCollapsed)}>
-    {/* header + botón collapse */}
-  </aside>
-
-  {/* MAIN ALWAYS ON */}
-  <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-    {/* TOP BAR + TABS + CONTENT */}
-  </main>
+          
 
             <div>
               <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
@@ -2267,11 +2249,20 @@ const MobileSidebarContent = SidebarContent;
     ...sidebar(),
     ...(safeIsMobile ? { display: "none" } : {}),
     ...(sidebarMode === "hidden" ? { display: "none" } : {}),
-    ...(sidebarMode === "mini" ? { overflow: "hidden" } : {}),
   }}
 >
-  <SidebarContent />
+  <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+    {/* si está mini, ocultamos contenido y mostramos hint */}
+    {sidebarMode === "mini" ? (
+      <div style={{ padding: 12, opacity: 0.85, fontWeight: 900 }}>
+        ◀
+      </div>
+    ) : (
+      <SidebarContent />
+    )}
+  </div>
 </aside>
+
 
 
 
