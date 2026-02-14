@@ -2241,7 +2241,13 @@ const MobileSidebarContent = SidebarContent;
         </div>
 
         {/* Main */}
-<div style={layout(compact, hudOpen || inspectorOpen, sidebarMode)}>
+<div
+  style={{
+    ...layout(compact, hudOpen || inspectorOpen, sidebarMode),
+    height: "calc(100vh - 56px)", // <- AJUSTA si tu topbar mide distinto
+    minHeight: 0,
+  }}
+>
 
           {/* Sidebar */}
         <aside
@@ -2269,6 +2275,16 @@ const MobileSidebarContent = SidebarContent;
 
           {/* Content */}
           <main style={mainCard()}>
+            <main
+  style={{
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  }}
+></main>
             {/* Tabs */}
             <div style={tabsBar()}>
               {TABS.map((t) => (
