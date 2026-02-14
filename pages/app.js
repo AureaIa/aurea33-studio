@@ -350,6 +350,27 @@ export default function AppPage() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
 
+// Sidebar layout modes: "open" | "mini" | "hidden"
+const [sidebarMode, setSidebarMode] = useState("open");
+
+useEffect(() => {
+  if (!user?.uid) return;
+  const k = `aurea33:sidebarMode:${user.uid}`;
+  const saved = localStorage.getItem(k);
+  if (saved === "open" || saved === "mini" || saved === "hidden") setSidebarMode(saved);
+}, [user?.uid]);
+
+useEffect(() => {
+  if (!user?.uid) return;
+  const k = `aurea33:sidebarMode:${user.uid}`;
+  localStorage.setItem(k, sidebarMode);
+}, [user?.uid, sidebarMode]);
+
+const cycleSidebar = () => {
+  setSidebarMode((m) => (m === "open" ? "mini" : m === "mini" ? "hidden" : "open"));
+};
+
+
   // UI
 
 const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
@@ -1066,24 +1087,7 @@ async function pollImageJobSafe({ jobId, maxMs = 180000, signal }) {
   }
 
 
-  function newFromTemplate(tpl) {
-  setStudioDoc({
-    version: 1,
-    meta: { title: tpl.name, w: tpl.w, h: tpl.h, bg: tpl.bg },
-    nodes: [],
-  });
-}
-
-function duplicateStudio() {
-  setStudioDoc((prev) => {
-    if (!prev) return prev;
-    return {
-      ...prev,
-      meta: { ...prev.meta, title: `${prev.meta?.title || "Untitled"} (Copy)` },
-      nodes: Array.isArray(prev.nodes) ? [...prev.nodes] : [],
-    };
-  });
-}
+ 
 
   /* ----------------------------- Chat ----------------------------- */
 // ✅ Asegúrate de importar getAuthToken desde donde lo tengas
@@ -1880,6 +1884,20 @@ const toggleSidebar = () => {
   });
 };
 
+const SIDEBAR_W = sidebarMode === "open" ? 320 : sidebarMode === "mini" ? 92 : 0;
+
+const sidebarWrapStyle = {
+  width: SIDEBAR_W,
+  transition: "width 220ms ease",
+  overflow: "hidden",
+  flex: "0 0 auto",
+};
+
+const mainWrapStyle = {
+  flex: 1,
+  minWidth: 0,
+};
+
   /* ----------------------------- loader seguro ----------------------------- */
   if (!authReady) {
     return (
@@ -1955,20 +1973,12 @@ const SidebarContent = () => (
 
     <div style={miniTabsRow()}>
 <span style={miniTabPill(activeTab === "chat")} onClick={() => setTab("chat")}>
-        💬 Chat
-      </span>
-      <span style={miniTabPill(activeTab === "code")} onClick={() => setActiveTab("code")}>
-        🧠 Code
-      </span>
-      <span style={miniTabPill(activeTab === "images")} onClick={() => setActiveTab("images")}>
-        🖼️ Images
-      </span>
-      <span style={miniTabPill(activeTab === "studio")} onClick={() => setActiveTab("studio")}>
-        🎛️ Studio
-      </span>
-      <span style={miniTabPill(activeTab === "excel")} onClick={() => setActiveTab("excel")}>
-        📄 Excel
-      </span>
+        💬 Chat </span>
+<span style={miniTabPill(activeTab === "code")} onClick={() => setTab("code")}>...</span>
+<span style={miniTabPill(activeTab === "images")} onClick={() => setTab("images")}>...</span>
+<span style={miniTabPill(activeTab === "studio")} onClick={() => setTab("studio")}>...</span>
+<span style={miniTabPill(activeTab === "excel")} onClick={() => setTab("excel")}>...</span>
+
     </div>
 
     <div style={projectList()}>
@@ -2229,12 +2239,20 @@ const MobileSidebarContent = SidebarContent;
         </div>
 
         {/* Main */}
-        <div style={layout(compact, hudOpen || inspectorOpen)}>
+<div style={layout(compact, hudOpen || inspectorOpen, sidebarMode)}>
 
           {/* Sidebar */}
-         <aside style={{ ...sidebar(), ...(safeIsMobile ? { display: "none" } : {}) }}>
+         <aside
+  style={{
+    ...sidebar(),
+    ...(safeIsMobile ? { display: "none" } : {}),
+    ...(sidebarMode === "hidden" ? { display: "none" } : {}),
+    ...(sidebarMode === "mini" ? { overflow: "hidden" } : {}),
+  }}
+>
   <SidebarContent />
 </aside>
+
 
 
           {/* Content */}
@@ -2471,6 +2489,22 @@ const MobileSidebarContent = SidebarContent;
                 <span style={studioTinyTag()}>Snap</span>
                 <span style={studioTinyTag()}>Grid</span>
                 <span style={studioTinyTag()}>Safe</span>
+                <button
+  onClick={cycleSidebar}
+  title="Abatir panel izquierdo"
+  style={{
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.06)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  {sidebarMode === "open" ? "◀" : sidebarMode === "mini" ? "▶" : "☰"}
+</button>
+
               </div>
             </div>
 
@@ -3162,9 +3196,16 @@ function logoCircle() {
     boxShadow: "0 0 22px rgba(247,198,0,0.16)",
   };
 }
+function layout(compact, rightOpen, sidebarMode) {
+  const leftOpen = compact ? 290 : 320;
+  const leftMini = 92;     // mini sidebar
+  const leftHidden = 0;    // hidden
 
-function layout(compact, rightOpen) {
-  const left = compact ? 290 : 320;
+  const left =
+    sidebarMode === "open" ? leftOpen :
+    sidebarMode === "mini" ? leftMini :
+    leftHidden;
+
   const right = compact ? 320 : 340;
 
   return {
@@ -3174,9 +3215,9 @@ function layout(compact, rightOpen) {
     padding: 14,
 
     width: "100%",
-    flex: 1,            // 👈 CLAVE: ocupa el resto debajo del topbar
-    minHeight: 0,       // 👈 CLAVE: permite que los hijos scrolleen bien
-    overflow: "hidden", // 👈 sin scroll externo
+    flex: 1,
+    minHeight: 0,
+    overflow: "hidden",
     alignItems: "stretch",
   };
 }
