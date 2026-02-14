@@ -3777,12 +3777,12 @@ function studioSubTopbar() {
   };
 }
 
-function studioGrid(isMobile) {
+function studioGrid() {
   return {
     flex: 1,
     minHeight: 0,
     display: "grid",
-    gridTemplateColumns: isMobile ? "1fr" : "300px 1fr 320px",
+    gridTemplateColumns: "1fr",
     gap: 12,
     alignItems: "stretch",
     overflow: "hidden",
