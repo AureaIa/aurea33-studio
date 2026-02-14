@@ -2454,62 +2454,8 @@ const MobileSidebarContent = SidebarContent;
 
       {/* Grid tipo Firefly */}
       <div style={studioGrid(safeIsMobile)}>
-        {/* LEFT RAIL */}
-        {!safeIsMobile && (
-          <aside style={studioLeftRail()}>
-            <div style={studioRailTitle()}>Plantillas</div>
-
-            <div style={studioTemplateList()}>
-              {[
-                { t: "Post IG 1080", d: "Minimal • Premium" },
-                { t: "Historia 1080×1920", d: "Story • Clean" },
-                { t: "Portada FB", d: "Pro • Impacto" },
-                { t: "Banner Web", d: "Hero • Modern" },
-              ].map((x) => (
-                <div key={x.t} style={studioTemplateCard()}>
-                  <div style={{ fontWeight: 900 }}>{x.t}</div>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>{x.d}</div>
-                  <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-                    <button
-                      style={studioMiniBtn()}
-                      onClick={() => toast("Template", "Luego conectamos inserción real al canvas 👑", "ok")}
-                    >
-                      Usar
-                    </button>
-                    <button style={studioMiniBtnSoft()} onClick={() => toast("Preview", "Preview pronto", "warn")}>
-                      Preview
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div style={studioRailSep()} />
-
-            <div style={studioRailTitle()}>Documentos</div>
-            <div style={{ display: "grid", gap: 8 }}>
-              {(studioSafe.docs || []).slice(0, 10).map((d) => {
-                const active = d.id === studioSafe.meta.activeDocId;
-                return (
-                  <button
-                    key={d.id}
-                    onClick={() => setActiveDoc(d.id)}
-                    style={studioDocBtn(active)}
-                    title={d.title}
-                  >
-                    <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {active ? "🎯 " : ""}{d.title}
-                    </div>
-                    <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
-                      {new Date(d.updatedAt || d.createdAt).toLocaleString()}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </aside>
-        )}
-
+      
+      
         {/* CANVAS FRAME (la joya visual) */}
         <section style={studioCanvasZone()}>
           <div style={studioCanvasFrame()}>
@@ -2555,44 +2501,6 @@ const MobileSidebarContent = SidebarContent;
             </button>
           </div>
         </section>
-
-        {/* RIGHT RAIL */}
-        {!safeIsMobile && (
-          <aside style={studioRightRail()}>
-            <div style={studioRailTitle()}>Propiedades</div>
-
-            <div style={studioPropCard()}>
-              <div style={studioPropLabel()}>Selección</div>
-              <div style={studioPropValue()}>{canvasDoc?.selectedId || "—"}</div>
-            </div>
-
-            <div style={studioPropCard()}>
-              <div style={studioPropLabel()}>Documento</div>
-              <div style={studioPropValue()}>
-                Fondo: {canvasDoc?.meta?.bg || "#0B1220"}
-              </div>
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <button style={studioGhostBtn()} onClick={() => toast("Soon", "Próximo: cambiar tamaño", "warn")}>
-                  Cambiar tamaño
-                </button>
-                <button style={studioGhostBtn()} onClick={() => toast("Soon", "Próximo: export PNG", "warn")}>
-                  Export PNG
-                </button>
-                <button style={studioGhostBtn()} onClick={() => toast("Soon", "Próximo: capas pro", "warn")}>
-                  Capas
-                </button>
-              </div>
-            </div>
-
-            <div style={studioPropCard()}>
-              <div style={studioPropLabel()}>AUREA Tips</div>
-              <div style={{ fontSize: 12, opacity: 0.8, lineHeight: 1.4 }}>
-                Hoy: estética Firefly. <br />
-                Próximo: templates reales, drag & drop, grids, snapping, export, presets por red social.
-              </div>
-            </div>
-          </aside>
-        )}
       </div>
     </div>
   );
