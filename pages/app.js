@@ -2242,7 +2242,7 @@ const MobileSidebarContent = SidebarContent;
 <div style={layout(compact, hudOpen || inspectorOpen, sidebarMode)}>
 
           {/* Sidebar */}
-         <aside
+        <aside
   style={{
     ...sidebar(),
     ...(safeIsMobile ? { display: "none" } : {}),
@@ -2252,6 +2252,7 @@ const MobileSidebarContent = SidebarContent;
 >
   <SidebarContent />
 </aside>
+
 
 
 
@@ -3198,8 +3199,8 @@ function logoCircle() {
 }
 function layout(compact, rightOpen, sidebarMode) {
   const leftOpen = compact ? 290 : 320;
-  const leftMini = 92;     // mini sidebar
-  const leftHidden = 0;    // hidden
+  const leftMini = 92;
+  const leftHidden = 0;
 
   const left =
     sidebarMode === "open" ? leftOpen :
@@ -3213,7 +3214,6 @@ function layout(compact, rightOpen, sidebarMode) {
     gridTemplateColumns: rightOpen ? `${left}px 1fr ${right}px` : `${left}px 1fr`,
     gap: 14,
     padding: 14,
-
     width: "100%",
     flex: 1,
     minHeight: 0,
@@ -3221,6 +3221,7 @@ function layout(compact, rightOpen, sidebarMode) {
     alignItems: "stretch",
   };
 }
+
 
 
 
