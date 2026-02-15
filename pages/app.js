@@ -367,8 +367,9 @@ useEffect(() => {
 }, [user?.uid, sidebarMode]);
 
 const cycleSidebar = () => {
-  setSidebarMode((m) => (m === "open" ? "mini" : m === "mini" ? "hidden" : "open"));
+  setSidebarMode((m) => (m === "open" ? "mini" : "open")); // ✅ NO EXISTE hidden
 };
+
 
 
   // UI
@@ -395,6 +396,13 @@ useEffect(() => {
   const saved = localStorage.getItem("aurea33:theme");
   if (saved === "light" || saved === "dark") setTheme(saved);
 }, []);
+
+useEffect(() => {
+  if (sidebarMode === "hidden") {
+    setSidebarMode("open");
+  }
+}, [sidebarMode]);
+
 
 // 3) Persist theme
 useEffect(() => {
@@ -2519,22 +2527,6 @@ const MobileSidebarContent = SidebarContent;
                 <span style={studioTinyTag()}>Snap</span>
                 <span style={studioTinyTag()}>Grid</span>
                 <span style={studioTinyTag()}>Safe</span>
-                <button
-  onClick={cycleSidebar}
-  title="Abatir panel izquierdo"
-  style={{
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.06)",
-    color: "var(--text)",
-    cursor: "pointer",
-    fontWeight: 900,
-  }}
->
-  {sidebarMode === "open" ? "◀" : sidebarMode === "mini" ? "▶" : "☰"}
-</button>
-
               </div>
             </div>
 
