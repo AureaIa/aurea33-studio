@@ -547,6 +547,8 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
   // For MobileApp
   const isMobile = useIsMobile(980);
 
+const [sidebarMode, setSidebarMode] = useState("open"); // "open" | "hidden"
+
 // hydration guard (CLAVE)
 const [hydrated, setHydrated] = useState(false);
 useEffect(() => setHydrated(true), []);
@@ -574,6 +576,7 @@ useEffect(() => {
     document.body.style.overflow = prevOverflow;
   };
 }, [safeIsMobile, sidebarOpen]);
+
 
 
 // 7) No Scroll crop por ECSS AUREA33
