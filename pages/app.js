@@ -2320,7 +2320,6 @@ const MobileSidebarContent = SidebarContent;
       {activeTab === "chat" && "💬 Chat AUREA conectado. Historial por proyecto."}
       {activeTab === "code" && "🧠 Código conectado. Historial por proyecto."}
       {activeTab === "excel" && "📄 Excel Wizard activo (con descarga conectada + spec PRO)."}
-      {activeTab === "studio" && "🎛️ AUREA STUDIO activo. Canvas persistente por proyecto."}
     </div>
             {/* Body */}
             <div style={mainBody()}>
