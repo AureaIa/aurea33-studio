@@ -350,25 +350,6 @@ export default function AppPage() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
 
-// Sidebar layout modes: "open" | "mini" | "hidden"
-const [sidebarMode, setSidebarMode] = useState("open");
-
-useEffect(() => {
-  if (!user?.uid) return;
-  const k = `aurea33:sidebarMode:${user.uid}`;
-  const saved = localStorage.getItem(k);
-  if (saved === "open" || saved === "mini" || saved === "hidden") setSidebarMode(saved);
-}, [user?.uid]);
-
-useEffect(() => {
-  if (!user?.uid) return;
-  const k = `aurea33:sidebarMode:${user.uid}`;
-  localStorage.setItem(k, sidebarMode);
-}, [user?.uid, sidebarMode]);
-
-const cycleSidebar = () => {
-  setSidebarMode((m) => (m === "open" ? "mini" : "open")); // ✅ NO EXISTE hidden
-};
 
 
 
@@ -2284,10 +2265,11 @@ const MobileSidebarContent = SidebarContent;
         {/* Main */}
 <div
   style={{
-    ...layout(compact, hudOpen || inspectorOpen, sidebarMode),
-    height: "calc(100vh - 56px)", // <- AJUSTA si tu topbar mide distinto
-    minHeight: 0,
-  }}
+  ...layout(compact, hudOpen || inspectorOpen, leftCollapsed, safeIsMobile),
+  height: "calc(100vh - 56px)",
+  minHeight: 0,
+}}
+
 >
 {/* Sidebar – SOLO AUREA CORE colapsable */}
 <aside
@@ -3269,21 +3251,27 @@ function logoCircle() {
     boxShadow: "0 0 22px rgba(247,198,0,0.16)",
   };
 }
-function layout(compact, rightOpen, sidebarMode) {
+function layout(compact, rightOpen, leftCollapsed, safeIsMobile) {
   const leftOpen = compact ? 290 : 320;
-  const leftMini = 92;
-  const leftHidden = 0;
+  const leftRail = 72;
 
-  const left =
-    sidebarMode === "open" ? leftOpen :
-    sidebarMode === "mini" ? leftMini :
-    leftHidden;
-
+  // ✅ Mobile: NO reserves columna izquierda
+  const left = safeIsMobile ? 0 : (leftCollapsed ? leftRail : leftOpen);
   const right = compact ? 320 : 340;
+
+  const cols = (() => {
+    if (rightOpen) {
+      if (left > 0) return `${left}px 1fr ${right}px`;
+      return `1fr ${right}px`; // ✅ sin columna izquierda
+    } else {
+      if (left > 0) return `${left}px 1fr`;
+      return `1fr`; // ✅ full width main
+    }
+  })();
 
   return {
     display: "grid",
-    gridTemplateColumns: rightOpen ? `${left}px 1fr ${right}px` : `${left}px 1fr`,
+    gridTemplateColumns: cols,
     gap: 14,
     padding: 14,
     width: "100%",
@@ -3293,6 +3281,7 @@ function layout(compact, rightOpen, sidebarMode) {
     alignItems: "stretch",
   };
 }
+
 
 
 
