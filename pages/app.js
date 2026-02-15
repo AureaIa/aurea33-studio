@@ -1907,14 +1907,16 @@ const toggleSidebar = () => {
   });
 };
 
-const SIDEBAR_W = sidebarMode === "open" ? 320 : sidebarMode === "mini" ? 92 : 0;
+const SIDEBAR_FULL = 320;
+const SIDEBAR_RAIL = 66;
 
 const sidebarWrapStyle = {
-  width: SIDEBAR_W,
+  width: leftCollapsed ? SIDEBAR_RAIL : SIDEBAR_FULL,
+  flex: `0 0 ${leftCollapsed ? SIDEBAR_RAIL : SIDEBAR_FULL}px`,
   transition: "width 220ms ease",
   overflow: "hidden",
-  flex: "0 0 auto",
 };
+
 
 const mainWrapStyle = {
   flex: 1,
