@@ -1929,14 +1929,45 @@ const mainWrapStyle = {
   const apiExcelStatus = excelMeta?.lastOkAt ? "ok" : excelMeta?.lastError ? "error" : "—";
 
 /* ✅ AQUÍ MISMO, ANTES DEL return */
+// ✅ Left Sidebar collapse (SOLO AUREA CORE)
+const [leftCollapsed, setLeftCollapsed] = useState(false);
+
+// ✅ opcional: persistir por usuario
+useEffect(() => {
+  if (!user?.uid) return;
+  const k = `aurea33:leftCollapsed:${user.uid}`;
+  const saved = localStorage.getItem(k);
+  if (saved != null) setLeftCollapsed(saved === "1");
+}, [user?.uid]);
+
+useEffect(() => {
+  if (!user?.uid) return;
+  const k = `aurea33:leftCollapsed:${user.uid}`;
+  localStorage.setItem(k, leftCollapsed ? "1" : "0");
+}, [user?.uid, leftCollapsed]);
+
 const SidebarContent = () => (
   <>
     <div style={sidebarHeader()}>
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+    <div>
       <div style={{ fontWeight: 900 }}>AUREA CORE</div>
       <div style={{ fontSize: 12, opacity: 0.7 }}>
         Proyectos persistentes • Tabs fijos • Historial local
       </div>
     </div>
+
+    {/* ✅ SOLO colapsa AUREA CORE */}
+    <button
+      style={collapseBtn()}
+      onClick={() => setLeftCollapsed((v) => !v)}
+      title={leftCollapsed ? "Expandir AUREA CORE" : "Contraer AUREA CORE"}
+    >
+      {leftCollapsed ? "▶" : "◀"}
+    </button>
+  </div>
+</div>
+
 
     <div style={sidebarActions()}>
       <div style={{ fontWeight: 900, opacity: 0.9 }}>PROYECTOS</div>
@@ -3258,6 +3289,58 @@ function sidebar() {
     backdropFilter: "var(--blur)",
   };
 }
+
+function sidebarWrap(leftCollapsed) {
+  return {
+    width: leftCollapsed ? 72 : 320,   // ✅ colapsado = rail delgadito
+    minWidth: leftCollapsed ? 72 : 320,
+    maxWidth: leftCollapsed ? 72 : 320,
+    transition: "width 180ms ease",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+  };
+}
+
+function collapseBtn() {
+  return {
+    padding: "8px 10px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.06)",
+    color: "var(--text)",
+    cursor: "pointer",
+    fontWeight: 900,
+    lineHeight: 1,
+  };
+}
+
+function railBtn(active) {
+  return {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    border: active ? "1px solid rgba(247,198,0,0.35)" : "1px solid rgba(255,255,255,0.10)",
+    background: active ? "rgba(247,198,0,0.12)" : "rgba(255,255,255,0.05)",
+    color: "var(--text)",
+    cursor: "pointer",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 18,
+    fontWeight: 900,
+  };
+}
+
+function railWrap() {
+  return {
+    padding: 10,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    alignItems: "center",
+  };
+}
+
 
 function sidebarHeader() {
   return {
