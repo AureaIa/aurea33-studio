@@ -816,7 +816,22 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [activeProjectId, activeTab, activeProject]);
 
+// ✅ Left Sidebar collapse (SOLO AUREA CORE)
+const [leftCollapsed, setLeftCollapsed] = useState(false);
 
+// ✅ opcional: persistir por usuario
+useEffect(() => {
+  if (!user?.uid) return;
+  const k = `aurea33:leftCollapsed:${user.uid}`;
+  const saved = localStorage.getItem(k);
+  if (saved != null) setLeftCollapsed(saved === "1");
+}, [user?.uid]);
+
+useEffect(() => {
+  if (!user?.uid) return;
+  const k = `aurea33:leftCollapsed:${user.uid}`;
+  localStorage.setItem(k, leftCollapsed ? "1" : "0");
+}, [user?.uid, leftCollapsed]);
 
   /* ----------------------------- Pin message ----------------------------- */
   const toggleMessagePin = (tabKey, msgId) => {
@@ -1929,22 +1944,7 @@ const mainWrapStyle = {
   const apiExcelStatus = excelMeta?.lastOkAt ? "ok" : excelMeta?.lastError ? "error" : "—";
 
 /* ✅ AQUÍ MISMO, ANTES DEL return */
-// ✅ Left Sidebar collapse (SOLO AUREA CORE)
-const [leftCollapsed, setLeftCollapsed] = useState(false);
 
-// ✅ opcional: persistir por usuario
-useEffect(() => {
-  if (!user?.uid) return;
-  const k = `aurea33:leftCollapsed:${user.uid}`;
-  const saved = localStorage.getItem(k);
-  if (saved != null) setLeftCollapsed(saved === "1");
-}, [user?.uid]);
-
-useEffect(() => {
-  if (!user?.uid) return;
-  const k = `aurea33:leftCollapsed:${user.uid}`;
-  localStorage.setItem(k, leftCollapsed ? "1" : "0");
-}, [user?.uid, leftCollapsed]);
 
 const SidebarContent = () => (
   <>
