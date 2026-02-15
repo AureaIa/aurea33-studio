@@ -2287,25 +2287,43 @@ const MobileSidebarContent = SidebarContent;
     minHeight: 0,
   }}
 >
-
-          {/* Sidebar */}
-        <aside
+{/* Sidebar – SOLO AUREA CORE colapsable */}
+<aside
   style={{
-    ...sidebar(),
-    ...(safeIsMobile ? { display: "none" } : {}),
-    ...(sidebarMode === "hidden" ? { display: "none" } : {}),
+    width: leftCollapsed ? 72 : 320,
+    minWidth: leftCollapsed ? 72 : 320,
+    maxWidth: leftCollapsed ? 72 : 320,
+    transition: "width 180ms ease",
+    overflow: "hidden",
+    display: safeIsMobile ? "none" : "flex",
+    flexDirection: "column",
   }}
 >
-  <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-    {/* si está mini, ocultamos contenido y mostramos hint */}
-    {sidebarMode === "mini" ? (
-      <div style={{ padding: 12, opacity: 0.85, fontWeight: 900 }}>
-        ◀
-      </div>
-    ) : (
-      <SidebarContent />
-    )}
-  </div>
+  {!leftCollapsed ? (
+    <SidebarContent />
+  ) : (
+    <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+      {/* Botón expandir */}
+      <button
+        onClick={() => setLeftCollapsed(false)}
+        style={collapseBtn()}
+        title="Expandir AUREA CORE"
+      >
+        ▶
+      </button>
+
+      {/* Mini accesos */}
+      <button style={railBtn(activeTab === "chat")} onClick={() => setTab("chat")}>💬</button>
+      <button style={railBtn(activeTab === "images")} onClick={() => setTab("images")}>🖼️</button>
+      <button style={railBtn(activeTab === "code")} onClick={() => setTab("code")}>🧠</button>
+      <button style={railBtn(activeTab === "studio")} onClick={() => setTab("studio")}>🎛️</button>
+      <button style={railBtn(activeTab === "excel")} onClick={() => setTab("excel")}>📄</button>
+
+      <div style={{ height: 10 }} />
+
+      <button style={railBtn(false)} onClick={createNewProject}>＋</button>
+    </div>
+  )}
 </aside>
 
 
