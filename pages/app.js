@@ -357,6 +357,12 @@ export default function AppPage() {
 
 const [activeTab, setActiveTab] = useState(TABS?.[0]?.key || "chat");
 const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+const [sidebarMode, setSidebarMode] = useState("open"); // "open" | "hidden"
+useEffect(() => {
+  if (sidebarMode === "hidden") {
+    setSidebarMode("open");
+  }
+}, [sidebarMode]);
 
 
 const STUDIO_TEMPLATES = [
@@ -377,12 +383,6 @@ useEffect(() => {
   const saved = localStorage.getItem("aurea33:theme");
   if (saved === "light" || saved === "dark") setTheme(saved);
 }, []);
-
-useEffect(() => {
-  if (sidebarMode === "hidden") {
-    setSidebarMode("open");
-  }
-}, [sidebarMode]);
 
 
 // 3) Persist theme
@@ -547,7 +547,6 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
   // For MobileApp
   const isMobile = useIsMobile(980);
 
-const [sidebarMode, setSidebarMode] = useState("open"); // "open" | "hidden"
 
 // hydration guard (CLAVE)
 const [hydrated, setHydrated] = useState(false);
