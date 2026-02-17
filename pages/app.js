@@ -418,10 +418,20 @@ const hydrateStudioDocFromLS = () => {
   if (!uid || !projectId || !docId) return;
 
   const key = lsStudioDocKey(uid, projectId, docId);
-  const savedDoc = safeLSGet(key, null);
-  if (!savedDoc) return;
 
-  // ✅ Guard anti-loop
+  // ✅ tú guardas STRING, aquí leemos STRING
+  const savedStr = safeGetLS(key, null);
+  if (!savedStr) return;
+
+  let savedDoc = null;
+  try {
+    savedDoc = typeof savedStr === "string" ? JSON.parse(savedStr) : savedStr;
+  } catch (e) {
+    // si se corrompió el LS, mejor no hidratar
+    return;
+  }
+
+  // ✅ Guard anti-loop (por doc activo)
   const hKey = `${uid}|${projectId}|${docId}`;
   if (lastHydratedRef.current === hKey) return;
 
@@ -450,6 +460,7 @@ const hydrateStudioDocFromLS = () => {
   lastHydratedRef.current = hKey;
   updateProjectTab("studio", nextStudio);
 };
+
 
 
 useEffect(() => {
@@ -911,9 +922,6 @@ useEffect(() => {
       updateProjectTab("studio", { ...studioSafe, meta: { ...(studioSafe.meta || {}), activeDocId: savedActive } });
     }
   }
-
-  // hidrata el doc activo desde LS (tu función ya existe)
-  hydrateStudioDocFromLS();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [user?.uid, activeProjectId, activeTab]);
