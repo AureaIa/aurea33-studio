@@ -4,6 +4,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../lib/firebase";
+import { initAuthPersistence } from "../lib/firebase";
 
 
 import { getAuthToken } from "../lib/getAuthToken";
@@ -387,7 +388,10 @@ export default function AppPage() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
 
-
+ // ✅ init auth persistence (cliente)
+  useEffect(() => {
+    initAuthPersistence();
+  }, []);
 
 
   // UI
@@ -415,12 +419,26 @@ const hydrateStudioDocFromLS = () => {
 
   const key = lsStudioDocKey(uid, projectId, docId);
   const savedDoc = safeLSGet(key, null);
+  if (!savedDoc) return;
 
-  if (!savedDoc) return; // nada guardado aún
+  // ✅ Guard anti-loop
+  const hKey = `${uid}|${projectId}|${docId}`;
+  if (lastHydratedRef.current === hKey) return;
 
-  // mete savedDoc en el doc activo del proyecto (sin destruir docs)
   const studioRaw = activeProject?.tabs?.studio;
   const studioSafe = ensureStudioHasActiveDoc(studioRaw);
+
+  const currentEntry = (studioSafe.docs || []).find((d) => d.id === docId);
+  const currentDoc = currentEntry?.doc || null;
+
+  // ✅ Si ya es igual, no vuelvas a setState
+  const same =
+    currentDoc && JSON.stringify(currentDoc) === JSON.stringify(savedDoc);
+
+  if (same) {
+    lastHydratedRef.current = hKey;
+    return;
+  }
 
   const nextStudio = {
     ...studioSafe,
@@ -429,8 +447,10 @@ const hydrateStudioDocFromLS = () => {
     ),
   };
 
+  lastHydratedRef.current = hKey;
   updateProjectTab("studio", nextStudio);
 };
+
 
 useEffect(() => {
   if (!user?.uid) return;
@@ -526,12 +546,21 @@ useEffect(() => {
     const doc = entry?.doc;
     if (!doc) return;
 
-    saveActiveStudioDocToLS(doc);
+    const docStr = JSON.stringify(doc);
+    if (docStr === lastSavedHashRef.current) return;
+
+    lastSavedHashRef.current = docStr;
+    saveActiveStudioDocToLS(doc); // tu función debe usar docId activo adentro
   }, 3000);
 
   return () => clearInterval(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [user?.uid, activeProjectId, activeTab, activeProject?.tabs?.studio?.meta?.activeDocId]);
+}, [
+  user?.uid,
+  activeProjectId,
+  activeTab,
+  activeProject?.tabs?.studio?.meta?.activeDocId,
+  activeProject?.tabs?.studio, // ✅ para que siempre lea cambios reales del doc
+]);
 
 // 5) Vars (CSS custom props)
 const themeVars = useMemo(() => {
@@ -634,6 +663,11 @@ const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Abort
   const abortRef = useRef(null);
+
+  // ✅ Evita hidratar en loop el mismo doc
+const lastHydratedRef = useRef(""); // key: uid|projectId|docId
+const lastSavedHashRef = useRef("");
+
 
   // Scroll refs
   const chatListRef = useRef(null);
@@ -800,10 +834,9 @@ if (data?.projects?.length) {
 // =======================
 const studioSaveRef = useRef(null);
 
-// guarda doc activo (debounced) + actualiza index del mini-book
-const saveActiveStudioDocToLS = (nextDoc) => {
-  if (!user?.uid) return;
-  if (!activeProjectId) return;
+// guarda doc activo + actualiza index del mini-book
+const saveActiveStudioDocToLS = (doc) => {
+  if (!user?.uid || !activeProjectId) return;
 
   const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
   const docId = studioSafe?.meta?.activeDocId;
@@ -811,14 +844,14 @@ const saveActiveStudioDocToLS = (nextDoc) => {
 
   // 1) Doc storage (por doc)
   const docKey = lsStudioDocKey(user.uid, activeProjectId, docId);
-  safeLSSet(docKey, nextDoc);
+  safeSetLS(docKey, JSON.stringify(doc));
 
   // 2) Persist activeDoc por proyecto
   safeSetLS(lsStudioActiveDocKey(user.uid, activeProjectId), docId);
 
   // 3) Index mini-book (sin thumbnail todavía, pero con metadata)
   const idxKey = lsStudioIndexKey(user.uid);
-  const index = safeLSGet(idxKey, { projects: {} });
+  const index = safeGetLS(idxKey, { projects: {} });
 
   const projEntry = index.projects?.[activeProjectId] || {
     projectId: activeProjectId,
@@ -831,14 +864,16 @@ const saveActiveStudioDocToLS = (nextDoc) => {
   projEntry.updatedAt = Date.now();
 
   const existingDocMeta = projEntry.docs?.[docId] || {};
+  const docTitle =
+    studioSafe.docs.find((d) => d.id === docId)?.title ||
+    existingDocMeta.title ||
+    "Canvas";
+
   projEntry.docs = {
     ...(projEntry.docs || {}),
     [docId]: {
       docId,
-      title:
-        studioSafe.docs.find((d) => d.id === docId)?.title ||
-        existingDocMeta.title ||
-        "Canvas",
+      title: docTitle,
       updatedAt: Date.now(),
       // thumbnail: null, // (lo metemos después desde Konva export)
     },
@@ -849,8 +884,9 @@ const saveActiveStudioDocToLS = (nextDoc) => {
     [activeProjectId]: projEntry,
   };
 
-  safeLSSet(idxKey, index);
+  safeSetLS(idxKey, index);
 };
+
 
 // debounce “tipo Canva”
 const scheduleSaveStudio = (nextDoc) => {
@@ -881,6 +917,31 @@ useEffect(() => {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [user?.uid, activeProjectId, activeTab]);
+
+useEffect(() => {
+  if (!user?.uid) return;
+  if (!activeProjectId) return;
+  if (activeTab !== "studio") return;
+
+  const t = setInterval(() => {
+    const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+    const docId = studioSafe?.meta?.activeDocId;
+    if (!docId) return;
+
+    const entry = studioSafe.docs.find((d) => d.id === docId);
+    const doc = entry?.doc;
+    if (!doc) return;
+
+    // evita escribir LS si no cambió nada
+    const docStr = JSON.stringify(doc);
+    if (docStr === lastSavedHashRef.current) return;
+    lastSavedHashRef.current = docStr;
+
+    saveActiveStudioDocToLS(doc);
+  }, 3000);
+
+  return () => clearInterval(t);
+}, [user?.uid, activeProjectId, activeTab, activeProject?.tabs?.studio?.meta?.activeDocId]);
 
 
   const activeTabMessages = useMemo(() => {
@@ -2764,9 +2825,12 @@ const MobileSidebarContent = SidebarContent;
              
            <CanvasEditorClient
   studio={{ id: studioSafe.meta.activeDocId, doc: canvasDoc }}
-  onChange={(nextStudio) => {
-    setCanvasDoc(nextStudio.doc);
-  }}
+  onChange={(payload) => {
+  const nextDoc = payload?.doc ? payload.doc : payload; // ✅ soporta doc directo o {doc}
+  if (!nextDoc) return;
+  setCanvasDoc(nextDoc);
+}}
+
   compact={compact}
 />
 
