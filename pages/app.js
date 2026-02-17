@@ -33,15 +33,6 @@ const TABS = [
 
 
 
-  // Projects (persist)
-  const [projects, setProjects] = useState([]);
-  const [activeProjectId, setActiveProjectId] = useState(null);
-
-  const activeProject = useMemo(() => {
-  if (!activeProjectId) return null;
-  return projects.find((p) => p.id === activeProjectId) || null;
-}, [projects, activeProjectId]);
-
 /* ----------------------------- LocalStorage ----------------------------- */
 
 function lsKey(uid) {
@@ -389,6 +380,25 @@ function debounce(fn, ms = 700) {
   };
 }
 
+const lsKeyProjects = (uid) => `aurea33:studioIndex:${uid}`; 
+const lsKeyActiveProject = (uid) => `aurea33:activeProject:${uid}`;
+
+const safeGetLS = (k, fallback = null) => {
+  try {
+    if (typeof window === "undefined") return fallback;
+    const v = localStorage.getItem(k);
+    return v == null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+};
+const safeSetLS = (k, v) => {
+  try {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(k, v);
+  } catch {}
+};
+
 
 export default function AppPage() {
   const router = useRouter();
@@ -413,6 +423,42 @@ useEffect(() => {
     setSidebarMode("open");
   }
 }, [sidebarMode]);
+
+// ✅ Projects (state)
+const [projects, setProjects] = useState([]);         // lista de proyectos
+const [activeProjectId, setActiveProjectId] = useState(null);
+
+// ✅ Projects (persist) - HYDRATE (load once per user)
+const didHydrateProjectsRef = useRef(false);
+
+useEffect(() => {
+  if (!authReady) return;
+  if (!user?.uid) return;
+
+  // evita re-hidratar si el componente re-renderiza
+  if (didHydrateProjectsRef.current) return;
+  didHydrateProjectsRef.current = true;
+
+  // 1) cargar projects
+  const rawProjects = safeGetLS(lsKeyProjects(user.uid), null);
+  if (rawProjects) {
+    try {
+      const parsed =
+        typeof rawProjects === "string" ? JSON.parse(rawProjects) : rawProjects;
+      if (Array.isArray(parsed)) setProjects(parsed);
+    } catch {}
+  }
+
+  // 2) cargar activeProjectId
+  const rawActive = safeGetLS(lsKeyActiveProject(user.uid), null);
+  if (rawActive) {
+    try {
+      const parsed =
+        typeof rawActive === "string" ? JSON.parse(rawActive) : rawActive;
+      if (parsed) setActiveProjectId(parsed);
+    } catch {}
+  }
+}, [authReady, user?.uid]);
 
 const getActiveStudioIds = () => {
   if (!user?.uid) return { uid: null, projectId: null, docId: null };
