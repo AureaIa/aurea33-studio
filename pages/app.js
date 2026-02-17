@@ -4705,9 +4705,5 @@ function toastCard(kind) {
 }
 
 
-export async function getServerSideProps() {
-  return { props: {} };
-}
-
 
 /* ----------------------------- CAMBIOS AQUI PARA PODER GUARDAR CTRL+S (2) ----------------------------- */
