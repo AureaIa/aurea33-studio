@@ -33,6 +33,15 @@ const TABS = [
 
 
 
+  // Projects (persist)
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+
+  const activeProject = useMemo(() => {
+  if (!activeProjectId) return null;
+  return projects.find((p) => p.id === activeProjectId) || null;
+}, [projects, activeProjectId]);
+
 /* ----------------------------- LocalStorage ----------------------------- */
 
 function lsKey(uid) {
@@ -641,11 +650,6 @@ const uiBase = useMemo(
   []
 );
 
-
-
-  // Projects (persist)
-  const [projects, setProjects] = useState([]);
-  const [activeProjectId, setActiveProjectId] = useState(null);
 
   // Inputs per tab (non-persist)
   const [chatInput, setChatInput] = useState("");
