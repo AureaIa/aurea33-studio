@@ -342,6 +342,43 @@ const authHeaders = async (forceRefresh = false) => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+// =======================
+// AUREA33 Studio Persistence (LocalStorage)
+// =======================
+function safeLSGet(key, fallback = null) {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeLSSet(key, value) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+const lsStudioDocKey = (uid, projectId, docId) =>
+  `aurea33:studioDoc:${uid}:${projectId}:${docId}`;
+
+const lsStudioActiveDocKey = (uid, projectId) =>
+  `aurea33:studioActiveDoc:${uid}:${projectId}`;
+
+const lsStudioIndexKey = (uid) =>
+  `aurea33:studioIndex:${uid}`;
+
+function debounce(fn, ms = 700) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 
 export default function AppPage() {
   const router = useRouter();
@@ -364,6 +401,46 @@ useEffect(() => {
   }
 }, [sidebarMode]);
 
+const getActiveStudioIds = () => {
+  if (!user?.uid) return { uid: null, projectId: null, docId: null };
+  const projectId = activeProjectId;
+  const studio = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+  const docId = studio?.meta?.activeDocId || null;
+  return { uid: user.uid, projectId, docId };
+};
+
+const hydrateStudioDocFromLS = () => {
+  const { uid, projectId, docId } = getActiveStudioIds();
+  if (!uid || !projectId || !docId) return;
+
+  const key = lsStudioDocKey(uid, projectId, docId);
+  const savedDoc = safeLSGet(key, null);
+
+  if (!savedDoc) return; // nada guardado aún
+
+  // mete savedDoc en el doc activo del proyecto (sin destruir docs)
+  const studioRaw = activeProject?.tabs?.studio;
+  const studioSafe = ensureStudioHasActiveDoc(studioRaw);
+
+  const nextStudio = {
+    ...studioSafe,
+    docs: (studioSafe.docs || []).map((d) =>
+      d.id === docId ? { ...d, updatedAt: uidNow(), doc: savedDoc } : d
+    ),
+  };
+
+  updateProjectTab("studio", nextStudio);
+};
+
+useEffect(() => {
+  if (!user?.uid) return;
+  if (!activeProjectId) return;
+  if (activeTab !== "studio") return;
+
+  hydrateStudioDocFromLS();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user?.uid, activeProjectId, activeTab, activeProject?.tabs?.studio?.meta?.activeDocId]);
+
 
 const STUDIO_TEMPLATES = [
   { id: "fb_post", name: "Facebook Post", w: 1080, h: 1080, bg: "#0b1020" },
@@ -372,6 +449,7 @@ const STUDIO_TEMPLATES = [
   { id: "fb_cover", name: "Facebook Cover", w: 1640, h: 624, bg: "#0b1020" },
   { id: "yt_thumb", name: "YouTube Thumbnail", w: 1280, h: 720, bg: "#0b1020" },
 ];
+
 
 
 // 1) State
@@ -433,6 +511,27 @@ const drawerBody = () => ({
   flex: 1,
 });
 
+// 4.1 ✅ Failsafe: cada 3s guarda el doc activo (si estás en Studio)
+useEffect(() => {
+  if (!user?.uid) return;
+  if (!activeProjectId) return;
+  if (activeTab !== "studio") return;
+
+  const t = setInterval(() => {
+    const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+    const docId = studioSafe?.meta?.activeDocId;
+    if (!docId) return;
+
+    const entry = studioSafe.docs.find((d) => d.id === docId);
+    const doc = entry?.doc;
+    if (!doc) return;
+
+    saveActiveStudioDocToLS(doc);
+  }, 3000);
+
+  return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user?.uid, activeProjectId, activeTab, activeProject?.tabs?.studio?.meta?.activeDocId]);
 
 // 5) Vars (CSS custom props)
 const themeVars = useMemo(() => {
@@ -617,6 +716,8 @@ useEffect(() => {
     }, ms);
   };
 
+
+  
   /* ----------------------------- Auth bootstrap ----------------------------- */
 useEffect(() => {
   const unsub = onAuthStateChanged(auth, (u) => {
@@ -693,6 +794,94 @@ if (data?.projects?.length) {
     if (!activeProjectId) return null;
     return projects.find((p) => p.id === activeProjectId) || null;
   }, [projects, activeProjectId]);
+
+  // =======================
+// ✅ Studio Autosave + Index (LocalStorage) — FIX PRO
+// =======================
+const studioSaveRef = useRef(null);
+
+// guarda doc activo (debounced) + actualiza index del mini-book
+const saveActiveStudioDocToLS = (nextDoc) => {
+  if (!user?.uid) return;
+  if (!activeProjectId) return;
+
+  const studioSafe = ensureStudioHasActiveDoc(activeProject?.tabs?.studio);
+  const docId = studioSafe?.meta?.activeDocId;
+  if (!docId) return;
+
+  // 1) Doc storage (por doc)
+  const docKey = lsStudioDocKey(user.uid, activeProjectId, docId);
+  safeLSSet(docKey, nextDoc);
+
+  // 2) Persist activeDoc por proyecto
+  safeSetLS(lsStudioActiveDocKey(user.uid, activeProjectId), docId);
+
+  // 3) Index mini-book (sin thumbnail todavía, pero con metadata)
+  const idxKey = lsStudioIndexKey(user.uid);
+  const index = safeLSGet(idxKey, { projects: {} });
+
+  const projEntry = index.projects?.[activeProjectId] || {
+    projectId: activeProjectId,
+    projectTitle: activeProject?.title || "Proyecto",
+    docs: {},
+    updatedAt: 0,
+  };
+
+  projEntry.projectTitle = activeProject?.title || projEntry.projectTitle;
+  projEntry.updatedAt = Date.now();
+
+  const existingDocMeta = projEntry.docs?.[docId] || {};
+  projEntry.docs = {
+    ...(projEntry.docs || {}),
+    [docId]: {
+      docId,
+      title:
+        studioSafe.docs.find((d) => d.id === docId)?.title ||
+        existingDocMeta.title ||
+        "Canvas",
+      updatedAt: Date.now(),
+      // thumbnail: null, // (lo metemos después desde Konva export)
+    },
+  };
+
+  index.projects = {
+    ...(index.projects || {}),
+    [activeProjectId]: projEntry,
+  };
+
+  safeLSSet(idxKey, index);
+};
+
+// debounce “tipo Canva”
+const scheduleSaveStudio = (nextDoc) => {
+  if (!studioSaveRef.current) {
+    studioSaveRef.current = debounce((doc) => saveActiveStudioDocToLS(doc), 900); // ~1s (pro)
+  }
+  studioSaveRef.current(nextDoc);
+};
+
+// ✅ cuando cambias de doc, hidrata doc guardado + guarda activeDocId
+useEffect(() => {
+  if (!user?.uid) return;
+  if (!activeProjectId) return;
+  if (activeTab !== "studio") return;
+
+  const savedActive = safeGetLS(lsStudioActiveDocKey(user.uid, activeProjectId), null);
+
+  // si hay savedActive, úsalo como activeDocId (sin romper si no existe)
+  if (savedActive && activeProject?.tabs?.studio) {
+    const studioSafe = ensureStudioHasActiveDoc(activeProject.tabs.studio);
+    if (studioSafe.docs.some((d) => d.id === savedActive) && studioSafe.meta.activeDocId !== savedActive) {
+      updateProjectTab("studio", { ...studioSafe, meta: { ...(studioSafe.meta || {}), activeDocId: savedActive } });
+    }
+  }
+
+  // hidrata el doc activo desde LS (tu función ya existe)
+  hydrateStudioDocFromLS();
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user?.uid, activeProjectId, activeTab]);
+
 
   const activeTabMessages = useMemo(() => {
   if (!activeProject) return [];
@@ -815,6 +1004,8 @@ useEffect(() => {
   const k = `aurea33:leftCollapsed:${user.uid}`;
   localStorage.setItem(k, leftCollapsed ? "1" : "0");
 }, [user?.uid, leftCollapsed]);
+
+
 
   /* ----------------------------- Pin message ----------------------------- */
   const toggleMessagePin = (tabKey, msgId) => {
@@ -2483,8 +2674,13 @@ const MobileSidebarContent = SidebarContent;
         : d
     ),
   };
+
   updateProjectTab("studio", nextStudio);
+
+  // ✅ AUTO-SAVE tipo Canva (por doc)
+  scheduleSaveStudio(nextDoc);
 };
+
 
 
 
@@ -4512,3 +4708,6 @@ function toastCard(kind) {
 export async function getServerSideProps() {
   return { props: {} };
 }
+
+
+/* ----------------------------- CAMBIOS AQUI PARA PODER GUARDAR CTRL+S (2) ----------------------------- */
